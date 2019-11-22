@@ -236,7 +236,7 @@ class Client:
         
         try:
             # Bind the socket to the address using the RTP port given by the client user
-            self.rtpSocket.bind(("", self.rtpPort))
+            self.rtpSocket.bind((self.serverAddr, self.rtpPort))
         except:
             tkMessageBox.showwarning('Unable to Bind', 'Unable to bind PORT=%d' %self.rtpPort)
 
@@ -254,3 +254,5 @@ rtpPort = 8001
 fileName = "a.jpg"
 root = Tk()
 client = Client(root, serverAddr, serverPort, rtpPort, fileName)
+client.master.title('Client')
+root.mainloop()
