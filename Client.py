@@ -247,12 +247,3 @@ class Client:
             self.exitClient()
         else: # When the user presses cancel, resume playing.
             self.playMovie()
-
-serverAddr = "127.0.0.1"
-serverPort = 8000
-rtpPort = 8001
-fileName = "a.jpg"
-root = Tk()
-client = Client(root, serverAddr, serverPort, rtpPort, fileName)
-client.master.title('Client')
-root.mainloop()
