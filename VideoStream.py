@@ -1,4 +1,4 @@
-
+import os
 class VideoStream:
     """mjpeg/mjpg格式用的stream"""
     def __init__(self, filename):
@@ -42,3 +42,27 @@ class VideoStream:
     def getFrameNum(self):
         return self.frameNum
 
+
+class JpgsStream:
+    """mjpeg/mjpg格式用的stream"""
+    def __init__(self, folder):
+        self.folder = folder
+        try:
+            self.files = os.listdir(folder)
+        except Exception:
+            print('cannot read', folder)
+            raise IOError
+        self.frameNum = 0
+
+    def nextFrame(self):
+        if self.frameNum < len(self.files):
+            filename = os.path.join(self.folder, self.files[self.frameNum])
+            file = open(filename, 'rb')
+            frame = file.read()
+            self.frameNum = self.frameNum + 1
+
+            return frame
+
+
+    def getFrameNum(self):
+        return self.frameNum

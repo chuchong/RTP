@@ -8,7 +8,7 @@ import socket
 import RtpPacket
 PACKET_DATA_SIZE = 256
 
-from VideoStream import VideoStream
+from VideoStream import VideoStream, JpgsStream
 class Server:
 
     INIT = 0
@@ -62,7 +62,8 @@ class Server:
     def setup(self, filename, seq, rtpPort):
         if self.state == self.INIT:
             try:
-                self.videoStream = VideoStream(filename)
+                # self.videoStream = VideoStream(filename)
+                self.videoStream = JpgsStream(filename)
                 self.state = self.READY
             except IOError:
                 self.respond(404, seq)
