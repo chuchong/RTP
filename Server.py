@@ -102,7 +102,7 @@ class Server:
         thresold = 10
 
         while True:
-            self.event.wait(0.05)
+            # self.event.wait(0.0166)
 
             if self.event.isSet():
                 break
