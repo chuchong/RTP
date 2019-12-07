@@ -3,6 +3,8 @@ from tkinter import Tk
 import tkinter.messagebox as tkMessageBox
 from PIL import Image, ImageTk
 import socket, threading, sys, traceback, os
+import queue
+import time
 
 from RtpPacket import RtpPacket
 
@@ -35,6 +37,7 @@ class Client:
         self.teardownAcked = 0
         self.connectToServer()
         self.frameNbr = 0
+        self.buffer = queue.Queue() # 多线程显示缓存的列表
         
     def createWidgets(self):
         """Build GUI."""
@@ -63,10 +66,12 @@ class Client:
         self.teardown.grid(row=1, column=3, padx=2, pady=2)
         
         # Create a label to display the movie
-        # self.label = Label(self.master, height=19)
-        # self.label.grid(row=0, column=0, columnspan=4, sticky=W+E+N+S, padx=5, pady=5)
-        self.canvas = Canvas(self.master, height=400)
-        self.canvas.grid(row=0, column=0, columnspan=4, sticky=W+E+N+S, padx=5, pady=5)
+        self.label = Label(self.master, height=19)
+        self.label.grid(row=0, column=0, columnspan=4, sticky=W+E+N+S, padx=5, pady=5)
+        # self.canvas = Canvas(self.master, height=400)
+        # self.canvas.grid(row=0, column=0, columnspan=4, sticky=W+E+N+S, padx=5, pady=5)
+        # self.photo = None
+        # self.image_on_canvas = self.canvas.create_image(0, 0, anchor=NW, image=self.photo)
 
     def setupMovie(self):
         """Setup button handler."""
@@ -88,11 +93,14 @@ class Client:
         """Play button handler."""
         if self.state == self.READY:
             # Create a new thread to listen for RTP packets
-            threading.Thread(target=self.listenRtp).start()
+
+
             self.playEvent = threading.Event()
             self.playEvent.clear()
             self.sendRtspRequest(self.PLAY)
-    
+            threading.Thread(target=self.refreshFrame).start()
+            threading.Thread(target=self.listenRtp).start()
+
     def listenRtp(self):        
         """Listen for RTP packets."""
         while True:
@@ -103,11 +111,15 @@ class Client:
                     rtpPacket.decode(data)
                     
                     currFrameNbr = rtpPacket.seqNum()
-                    print("Current Seq Num: " + str(currFrameNbr))
-                                        
+                    print('receive ', currFrameNbr)
+                    # self.buffer.append(rtpPacket)
+
+                    # print("Current Seq Num: " + str(currFrameNbr))
+                    #
                     if currFrameNbr > self.frameNbr: # Discard the late packet
+                        self.buffer.put_nowait(rtpPacket)
                         self.frameNbr = currFrameNbr
-                        self.updateMovie(self.writeFrame(rtpPacket.getPayload()))
+                        # self.updateMovie(self.writeFrame(rtpPacket.getPayload()))
             except:
                 # Stop listening upon requesting PAUSE or TEARDOWN
                 if self.playEvent.isSet(): 
@@ -119,7 +131,39 @@ class Client:
                     self.rtpSocket.shutdown(socket.SHUT_RDWR)
                     self.rtpSocket.close()
                     break
-                    
+
+    def refreshFrame(self):
+        # 多线程显示图片
+        while True:
+            try:
+                if self.playEvent.isSet():
+                    break
+
+                # Upon receiving ACK for TEARDOWN request,
+                # close the RTP socket
+                if self.teardownAcked == 1:
+                    # self.rtpSocket.shutdown(socket.SHUT_RDWR)
+                    # self.rtpSocket.close()
+                    break
+
+                # stime = time.time()
+                # rtpPacket = self.buffer.pop(0)
+                rtpPacket =self.buffer.get_nowait()
+                print(rtpPacket.seqNum())
+                self.updateMovie(self.writeFrame(rtpPacket.getPayload()))
+
+            except:
+                # 可能是没图片了
+                pass
+            # etime = time.time()
+            # deltaTime = etime - stime #差值为s为单位
+            # remainTime = 0.05 - deltaTime
+            # if remainTime > 0:
+            #     time.sleep(remainTime)
+
+
+
+
     def writeFrame(self, data):
         """Write the received frame to a temp image file. Return the image file."""
         cachename = CACHE_FILE_NAME + str(self.sessionId) + CACHE_FILE_EXT
@@ -131,13 +175,16 @@ class Client:
     
     def updateMovie(self, imageFile):
         """Update the image file as video frame in the GUI."""
-        self.photo = ImageTk.PhotoImage(Image.open(imageFile))
-        self.canvas.create_image(0,0,anchor=NW, image=self.photo)
-        self.master.update_idletasks()
-        self.master.update()
+        # self.photo = ImageTk.PhotoImage(Image.open(imageFile))
 
-        # self.label.configure(image = photo, height=288)
-        # self.label.image = photo
+        # self.canvas.itemconfig(self.image_on_canvas, image=self.photo)
+        # self.master.update_idletasks()
+        # self.master.update()
+        # self.canvas.update()
+
+        photo = ImageTk.PhotoImage(Image.open(imageFile))
+        self.label.configure(image = photo, height=288)
+        self.label.image = photo
         
     def connectToServer(self):
         """Connect to the Server. Start a new RTSP/TCP session."""

@@ -94,7 +94,9 @@ class Mp4Stream:
             print("sending images")
             self.frameNum += 1
             # imageBytes = cv2.imencode('.jpg', image)[1].tostring()
-            imageBytes = cv2.imencode('.jpg', image)[1].tobytes()
+            quality = 50
+            q = [int(cv2.IMWRITE_JPEG_QUALITY), quality]
+            imageBytes = cv2.imencode('.jpg', image, q)[1].tobytes()
             return imageBytes
 
         return None
