@@ -8,7 +8,7 @@ import socket
 import RtpPacket
 PACKET_DATA_SIZE = 256
 
-from VideoStream import VideoStream, JpgsStream
+from VideoStream import *
 class Server:
 
     INIT = 0
@@ -63,7 +63,8 @@ class Server:
         if self.state == self.INIT:
             try:
                 # self.videoStream = VideoStream(filename)
-                self.videoStream = JpgsStream(filename)
+                # self.videoStream = JpgsStream(filename)
+                self.videoStream = Mp4Stream(filename)
                 self.state = self.READY
             except IOError:
                 self.respond(404, seq)
@@ -116,6 +117,7 @@ class Server:
                                        port))
                     time.sleep(0.05)
                 except:
+                    print('error happen')
                     traceback.print_exc(file=sys.stdout)
 
     def makeRtp(self, data, frameNum):

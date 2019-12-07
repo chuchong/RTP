@@ -1,4 +1,6 @@
 import os
+import cv2
+
 class VideoStream:
     """mjpeg/mjpg格式用的stream"""
     def __init__(self, filename):
@@ -63,6 +65,39 @@ class JpgsStream:
 
             return frame
 
+
+    def getFrameNum(self):
+        return self.frameNum
+
+class Mp4Stream:
+    """用opencv提取序列帧"""
+    def __init__(self, filename):
+        self.filename = filename
+        try:
+            # self.file = open(filename, 'rb')
+            self.capture = cv2.VideoCapture(filename)
+        except:
+            raise IOError
+
+        self.frameNum = 0
+        self.fps = self.capture.get(cv2.CAP_PROP_FPS)
+        self.frameCnt = self.capture.get(cv2.CAP_PROP_FRAME_COUNT)
+        self.totalTime = self.frameCnt / self.fps
+
+
+    def nextFrame(self):
+        # if self.capture.get(cv2.CAP_PROP_POS_MSEC) > self.totalTime:
+        #     return None
+
+        success , image = self.capture.read()
+        if success:
+            print("sending images")
+            self.frameNum += 1
+            # imageBytes = cv2.imencode('.jpg', image)[1].tostring()
+            imageBytes = cv2.imencode('.jpg', image)[1].tobytes()
+            return imageBytes
+
+        return None
 
     def getFrameNum(self):
         return self.frameNum

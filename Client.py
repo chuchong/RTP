@@ -63,9 +63,11 @@ class Client:
         self.teardown.grid(row=1, column=3, padx=2, pady=2)
         
         # Create a label to display the movie
-        self.label = Label(self.master, height=19)
-        self.label.grid(row=0, column=0, columnspan=4, sticky=W+E+N+S, padx=5, pady=5) 
-    
+        # self.label = Label(self.master, height=19)
+        # self.label.grid(row=0, column=0, columnspan=4, sticky=W+E+N+S, padx=5, pady=5)
+        self.canvas = Canvas(self.master, height=400)
+        self.canvas.grid(row=0, column=0, columnspan=4, sticky=W+E+N+S, padx=5, pady=5)
+
     def setupMovie(self):
         """Setup button handler."""
         if self.state == self.INIT:
@@ -129,9 +131,13 @@ class Client:
     
     def updateMovie(self, imageFile):
         """Update the image file as video frame in the GUI."""
-        photo = ImageTk.PhotoImage(Image.open(imageFile))
-        self.label.configure(image = photo, height=288) 
-        self.label.image = photo
+        self.photo = ImageTk.PhotoImage(Image.open(imageFile))
+        self.canvas.create_image(0,0,anchor=NW, image=self.photo)
+        self.master.update_idletasks()
+        self.master.update()
+
+        # self.label.configure(image = photo, height=288)
+        # self.label.image = photo
         
     def connectToServer(self):
         """Connect to the Server. Start a new RTSP/TCP session."""
