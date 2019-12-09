@@ -5,7 +5,7 @@ TODO:
 3. report
 4. full screen
 5. search video (using http)
-6. 实现音频
+6. 实现音频 pydub
 7. 分包
 8. rtcp
 9. 转ts

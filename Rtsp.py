@@ -1,5 +1,6 @@
 ## 用于进行rtsp通讯,采用rtso/1.0
 import enum
+import re
 
 @enum.unique
 class METHOD(enum.Enum):
@@ -12,8 +13,9 @@ class METHOD(enum.Enum):
 
 
 class Rtsp:
-    methods = ('SETUP', 'PLAY', 'PAUSE',
-               'TEARDOWN', 'GET_PARAMETER', 'SET_PARAMETER')
+    """产生rtsp通讯字符串"""
+    methods = ['SETUP', 'PLAY', 'PAUSE',
+               'TEARDOWN', 'GET_PARAMETER', 'SET_PARAMETER']
     rtspVersion = 'RTSP/1.0'
     status={
             200: 'OK',
@@ -32,10 +34,11 @@ class Rtsp:
             462: 'Destination Unreachable',
             551: 'Option not supported'
             }
+    reg = re.compile('^(.*): (.*)$')
 
-
-    def respond(self, code,  seq, session, *args, **kwargs):
-
+    def respond(self, code,  seq, session, args=[], kwargs={}):
+        """warning: args时mutable的,也就是说只会被初始化一次,默认初始化时请不要修改其值"""
+        """rtsp产生respond"""
         statusStr = self.status[code]
 
         firstLine = '{} {} {}\n'.format(self.rtspVersion, code, statusStr)
@@ -51,18 +54,20 @@ class Rtsp:
             message = message + '\n'
             for param in kwargs.keys():
                 message = message + '{}: {}\n'.format(param, kwargs.get(param))
-
+        print(message)
+        message = message.rstrip('\n')
         return message
 
 
     def request(self, method, filename, client_port, seq, session, *args, **kwargs):
-
+        """rtsp产生request"""
         methodStr = self.methods[method.value]
 
         firstLine = '{} {} {}\n'.format(methodStr, filename, self.rtspVersion)
         secondLine = 'CSeq {}\n'.format(seq)
         if method == METHOD.SETUP:
-            thirdLine = 'Transport: RTP/UDP; client-port= {}\n'.format(client_port)
+            thirdLine = 'Transport: RTP/UDP; client-port= {}-{}\n'.format(
+                client_port, client_port + 1)# 这里一般用横杠区分rtp的port和rtcp的port
         else:
             thirdLine = 'Session: {}\n'.format(session)
 
@@ -76,16 +81,88 @@ class Rtsp:
             for param in kwargs.keys():
                 message = message + '{}: {}\n'.format(param, kwargs.get(param))
 
+        print(message)
+        message = message.rstrip('\n')
         return message
 
+    def getEnum(self, str):
+        """从字符串获取其属于类型"""
+        num = self.methods.index(str)
+        return METHOD(num)
 
-rtsp = Rtsp()
-# str1 = rtsp.request(METHOD(4), 'a', None, 1, 2, 'length', 'me')
-str2 = rtsp.request(METHOD(5), 'a', None, 1, 2, length=1, me=2)
-str1 = rtsp.respond(200, 1, 2)
-print(str1)
-print(str2)
+    def getDictParams(self, lines):
+        params = {}
+        for line in lines:
+            try:
+                match = self.reg.match(line)
+                param, value = match[1], match[2]
+                params[param] = value
+            except:
+                print('Error: Dict format not correct')
+        return params
 
+    def getParams(self, lines):
+        params = []
+        for line in lines:
+            params.append(line)
+        return params
 
+    def parseReplyNormal(self, data):
+        """用于一般reply的parse"""
+        lines = str(data).splitlines()
+        code = int(lines[0].split(' ')[1])
+        if code != 200:
+            raise Exception('Error: {}'.format(lines[0]))
+        seqNum = int(lines[1].split(' ')[1])
+        session = int(lines[2].split(' ')[1])
+        return seqNum, session
+
+    def parseReplyGet(self, data):
+        """request 为 get时调用这个"""
+        lines = str(data).splitlines()
+        seqNum, session = self.parseReplyNormal(''.join(lines[:3]))
+
+        params = self.getDictParams(lines[4:])
+
+        return seqNum, session, params
+
+    def parseReplySet(self, data):
+        """request为 set时调用这个"""
+        lines = str(data).splitlines()
+        seqNum, session = self.parseReplyNormal(''.join(lines[:3]))
+
+        params = self.getParams(lines[4:])
+
+        return seqNum, session, params
+
+    def parseRequest(self, data):
+        request = str(data).split('\n')
+
+        firstLine = request[0].split(' ')
+        requestType, filename = self.getEnum(firstLine[0]), firstLine[1]
+        seq = request[1].split(' ')[1]
+        if requestType == METHOD.SETUP:
+            rtpPorts = request[2].split(' ')[3].split('-')
+            return requestType, filename, seq, rtpPorts, None, None
+        else:
+            session = request[2].split(' ')[1]
+
+        if requestType == METHOD.GET_PARAMETER:
+            params = self.getParams(request[4:])
+            return requestType, filename, seq, None, session, params
+        elif requestType == METHOD.SET_PARAMETER:
+            params = self.getDictParams(requestType[4:])
+            return requestType, filename, seq, None, session, params
+        else:
+            return requestType, filename, seq, None, session, None
+
+# rtsp = Rtsp()
+# # str1 = rtsp.request(METHOD(4), 'a', None, 1, 2, 'length', 'me')
+# str2 = rtsp.request(METHOD(5), 'a', None, 1, 2, length=1, me=2)
+# str1 = rtsp.respond(455, 1, 2)
+# print(str1)
+# print(str2)
+#
+# print(rtsp.getEnum('SETUP'))
 
 

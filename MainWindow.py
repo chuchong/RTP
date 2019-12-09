@@ -9,35 +9,32 @@ from PyQt5.QtWidgets import QApplication, QMainWindow
 import os
 import threading
 import queue
+import socket
 from PyQt5.QtWidgets import *
 from PyQt5.QtGui import *
 from PyQt5.QtCore import *
 from clientUI import Ui_MainWindow
 from RtpPacket import RtpPacket
-import socket
+from Rtsp import *
+
 #用于显示bug,只放在最顶层的函数上
 CACHE_FILE_EXT = ".jpg"
 
 def qt_exception_wrapper(func):
-    def wrapper(self, *args, **kwargs):
+    def wrapper(self):
         try:
-            func(self, *args, **kwargs)
+            func(self)
         except Exception as e:
             QMessageBox.information(self, 'Error', 'Meet with Error: ' + str(e),
                 QMessageBox.Yes, QMessageBox.Yes)
     return wrapper
 
 class MainWindow(QMainWindow, Ui_MainWindow):
+    ##状态
     INIT = 0
     READY = 1
     PLAYING = 2
     state = INIT
-
-    SETUP = 0
-    PLAY = 1
-    PAUSE = 2
-    TEARDOWN = 3
-
     def __init__(self, serveraddr, serverport, rtpport, filename):
         super().__init__()
 
@@ -53,27 +50,47 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.connectToServer()
         self.frameNbr = 0
         self.buffer = queue.Queue() # 多线程显示缓存的列表
+        self.rtsp = Rtsp()
+        self.params = {}
+        self.onRtp = False # 是否正在使用rtp进行传输
 
         self.init.clicked.connect(self.setupMovie)
         self.play.clicked.connect(self.playMovie)
         self.pause.clicked.connect(self.pauseMovie)
         self.teardown.clicked.connect(self.exitClient)
 
+    def sendRequest(self):
+        self.rtspSeq += 1
+        message = self.rtsp.request(self.requestSent, self.fileName, self.rtpPort, self.rtspSeq,
+                                    self.sessionId)
+        self.rtspSocket.send(message.encode())
+        self.recvRtspReply()
+
+    @qt_exception_wrapper
     def setupMovie(self):
         """Setup button handler."""
         if self.state == self.INIT:
-            self.sendRtspRequest(self.SETUP)
+            self.requestSent = METHOD.SETUP
+            self.sendRequest()
 
+    @qt_exception_wrapper
     def exitClient(self):
         """Teardown button handler."""
-        self.sendRtspRequest(self.TEARDOWN)
+        try:
+            self.requestSent = METHOD.TEARDOWN
+            self.sendRequest()
+        except Exception as e:
+            print(e)
         self.close()
 
+    @qt_exception_wrapper
     def pauseMovie(self):
         """Pause button handler."""
         if self.state == self.PLAYING:
-            self.sendRtspRequest(self.PAUSE)
+            self.requestSent = METHOD.PAUSE
+            self.sendRequest()
 
+    @qt_exception_wrapper
     def playMovie(self):
         """Play button handler."""
         if self.state == self.READY:
@@ -81,13 +98,19 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
             self.playEvent = threading.Event()
             self.playEvent.clear()
-            self.sendRtspRequest(self.PLAY)
-            threading.Thread(target=self.refreshFrame).start()
-            threading.Thread(target=self.listenRtp).start()
+            self.requestSent = METHOD.PLAY
+            self.sendRequest()
+            t = threading.Thread(target=self.refreshFrame)
+            t.setDaemon(True) # 后台线程号结束
+            t.start()
+            t = threading.Thread(target=self.listenRtp)
+            t.setDaemon(True)
+            t.start()
 
     def listenRtp(self):
         """Listen for RTP packets."""
         while True:
+            print('listen')
             try:
                 data = self.rtpSocket.recv(65535)
                 if data:
@@ -95,7 +118,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                     rtpPacket.decode(data)
 
                     currFrameNbr = rtpPacket.seqNum()
-                    print('receive ', currFrameNbr)
+                    # print('receive ', currFrameNbr)
                     # self.buffer.append(rtpPacket)
 
                     # print("Current Seq Num: " + str(currFrameNbr))
@@ -107,29 +130,29 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             except:
                 # Stop listening upon requesting PAUSE or TEARDOWN
                 if self.playEvent.isSet():
-                    break
+                    return
 
                 # Upon receiving ACK for TEARDOWN request,
                 # close the RTP socket
                 if self.teardownAcked == 1:
                     self.rtpSocket.shutdown(socket.SHUT_RDWR)
                     self.rtpSocket.close()
-                    break
+                    return
 
     def refreshFrame(self):
         # 多线程显示图片
         while True:
+            print('refresh')
             try:
                 if self.playEvent.isSet():
-                    break
+                    return
 
                 # Upon receiving ACK for TEARDOWN request,
                 # close the RTP socket
                 if self.teardownAcked == 1:
                     # self.rtpSocket.shutdown(socket.SHUT_RDWR)
                     # self.rtpSocket.close()
-                    break
-
+                    return
                 # stime = time.time()
                 # rtpPacket = self.buffer.pop(0)
                 rtpPacket = self.buffer.get()
@@ -140,7 +163,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             except Exception as e:
                 # 可能是没图片了
                 print(e)
-                pass
+                return
             # etime = time.time()
             # deltaTime = etime - stime #差值为s为单位
             # remainTime = 0.05 - deltaTime
@@ -164,94 +187,66 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             QMessageBox.information(self, 'Error', 'Meet with Error: ' + str(e),
                 QMessageBox.Yes, QMessageBox.Yes)
 
-    def sendRtspRequest(self, requestCode):
-        """Send RTSP request to the server."""
-
-        # Setup request
-        if requestCode == self.SETUP and self.state == self.INIT:
-            threading.Thread(target=self.recvRtspReply).start()
-            # Update RTSP sequence number.
-            self.rtspSeq += 1
-
-            # Write the RTSP request to be sent.
-            request = 'SETUP ' + self.fileName + ' RTSP/1.0\nCSeq: ' + str(
-                self.rtspSeq) + '\nTransport: RTP/UDP; client_port= ' + str(self.rtpPort)
-
-            # Keep track of the sent request.
-            self.requestSent = self.SETUP
-
-            # Play request
-        elif requestCode == self.PLAY and self.state == self.READY:
-            self.rtspSeq += 1
-            request = 'PLAY ' + self.fileName + ' RTSP/1.0\nCSeq: ' + str(self.rtspSeq) + '\nSession: ' + str(
-                self.sessionId)
-            self.requestSent = self.PLAY
-
-        # Pause request
-        elif requestCode == self.PAUSE and self.state == self.PLAYING:
-            self.rtspSeq += 1
-            request = 'PAUSE ' + self.fileName + ' RTSP/1.0\nCSeq: ' + str(self.rtspSeq) + '\nSession: ' + str(
-                self.sessionId)
-            self.requestSent = self.PAUSE
-
-        # Teardown request
-        elif requestCode == self.TEARDOWN and not self.state == self.INIT:
-            self.rtspSeq += 1
-            request = 'TEARDOWN ' + self.fileName + ' RTSP/1.0\nCSeq: ' + str(self.rtspSeq) + '\nSession: ' + str(
-                self.sessionId)
-            self.requestSent = self.TEARDOWN
-        else:
-            return
-
-        # Send the RTSP request using rtspSocket.
-        self.rtspSocket.send(request.encode())
-
-        print('\nData sent:\n' + request)
-
     def recvRtspReply(self):
         """Receive RTSP reply from the server."""
-        while True:
-            reply = self.rtspSocket.recv(1024)
+        # while True:
+        reply = self.rtspSocket.recv(1024)
+        print(reply.decode())
+        if reply:
+            self.parseRtspReply(reply.decode("utf-8"))
 
-            if reply:
-                self.parseRtspReply(reply.decode("utf-8"))
-
-            # Close the RTSP socket upon requesting Teardown
-            if self.requestSent == self.TEARDOWN:
-                self.rtspSocket.shutdown(socket.SHUT_RDWR)
-                self.rtspSocket.close()
-                break
+        # Close the RTSP socket upon requesting Teardown
+        if self.requestSent == METHOD.TEARDOWN:
+            self.rtspSocket.shutdown(socket.SHUT_RDWR)
+            self.rtspSocket.close()
+            return
+            # break
 
     def parseRtspReply(self, data):
         """Parse the RTSP reply from the server."""
-        lines = str(data).split('\n')
-        seqNum = int(lines[1].split(' ')[1])
+        if self.requestSent == METHOD.SET_PARAMETER:
+            try:
+                seqNum, session, params = self.rtsp.parseReplySet(data)
+                # TODO 检测是否和发送的一致
+            except Exception as e:
+                print(e)
+                raise e
+        elif self.requestSent == METHOD.GET_PARAMETER:
+            try:
+                seqNum, session, params = self.rtsp.parseReplyGet(data)
+                for key in params.keys():
+                    self.params[key] = params[key]
+            except Exception as e:
+                print(e)
+                raise e
+        else:
+            try:
+                seqNum, session = self.rtsp.parseReplyNormal(data)
+            except Exception as e:
+                print(e)
+                raise e
 
-        # Process only if the server reply's sequence number is the same as the request's
-        if seqNum == self.rtspSeq:
-            session = int(lines[2].split(' ')[1])
-            # New RTSP session ID
-            if self.sessionId == 0:
+            if self.requestSent == METHOD.SETUP:
+                self.state = self.READY
+                # Open RTP port.
+                self.openRtpPort()
                 self.sessionId = session
+            elif self.requestSent == METHOD.PLAY:
+                self.state = self.PLAYING
+            elif self.requestSent == METHOD.PAUSE:
+                self.state = self.READY
+                # The play thread exits. A new thread is created on resume.
+                self.playEvent.set()
+            elif self.requestSent == METHOD.TEARDOWN:
+                self.state = self.INIT
+                # Flag the teardownAcked to close the socket.
+                self.teardownAcked = 1
+            else:
+                raise Exception("Error: unvalid respond status")
 
-            # Process only if the session ID is the same
-            if self.sessionId == session:
-                if int(lines[0].split(' ')[1]) == 200:
-                    if self.requestSent == self.SETUP:
-                        # Update RTSP state.
-                        self.state = self.READY
-                        # Open RTP port.
-                        self.openRtpPort()
-                    elif self.requestSent == self.PLAY:
-                        self.state = self.PLAYING
-                    elif self.requestSent == self.PAUSE:
-                        self.state = self.READY
-                        # The play thread exits. A new thread is created on resume.
-                        self.playEvent.set()
-                    elif self.requestSent == self.TEARDOWN:
-                        self.state = self.INIT
-                        # Flag the teardownAcked to close the socket.
-                        self.teardownAcked = 1
+        if session != self.sessionId:
+            raise Exception("Error: session code not match!")
+        # Process only if the server reply's sequence number is the same as the request's
 
     def openRtpPort(self):
         """Open RTP socket binded to a specified port."""

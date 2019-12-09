@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 import random
 import math
 import time
@@ -9,6 +10,7 @@ import RtpPacket
 PACKET_DATA_SIZE = 256
 
 from VideoStream import *
+from Rtsp import *
 class Server:
 
     INIT = 0
@@ -20,81 +22,131 @@ class Server:
         self.state = Server.INIT
         self.connSocket = connSocket
         self.clientAddress = clientAddress
+        self.rtsp = Rtsp()
+        self.rtpSocket = None
+        self.params = {}
+        self.event = threading.Event()
+        self.session = 0
 
-    def respond(self, code, seq):
-        if code == 200:
-            reply = 'RTSP/1.0 200 OK\nCSeq: ' + str(seq) + '\nSession: '+ str(self.session)
-            connSocket = self.connSocket
-            connSocket.send(reply.encode())
-
-        else:
-            print("Error: code is not 200")
+    # def respond(self, code, seq):
+    #     if code == 200:
+    #         reply = 'RTSP/1.0 200 OK\nCSeq: ' + str(seq) + '\nSession: '+ str(self.session)
+    #         connSocket = self.connSocket
+    #         connSocket.send(reply.encode())
+    #
+    #     else:
+    #         print("Error: code is not 200")
 
 
     def run(self):
-        threading.Thread(target=self.recvRtspRequest).start()
+        self.recvRtspRequest()
 
     def recvRtspRequest(self):
         while True:
-            data = self.connSocket.recv(PACKET_DATA_SIZE)
-            if data:
-                self.processRtspRequest(data.decode())
+            try:
+                data = self.connSocket.recv(PACKET_DATA_SIZE)
+                if data:
+                    print(data.decode())
+                    self.processRtspRequest(data.decode())
+
+                if len(data) == 0: # 0 代表已经断开
+                    return
+            except Exception as e:
+                print(e)
+                return
 
     def processRtspRequest(self, data):
 
-        request = data.split('\n')
+        print(str(data))
+        requestType, filename, seq, ports, session, params = self.rtsp.parseRequest(data)
 
-        firstLine = request[0].split(' ')
-        requestType, filename = firstLine[0], firstLine[1]
+        if requestType == METHOD.SETUP:
+            rtpPort = ports[0]
+            message = self.setup(filename, seq, rtpPort)
+        elif requestType == METHOD.PLAY:
+            message = self.play(seq)
+        elif requestType == METHOD.PAUSE:
+            message = self.pause(seq)
+        elif requestType == METHOD.TEARDOWN:
+            message = self.teardown(seq)
+        elif requestType == METHOD.SET_PARAMETER:
+            message = self.set_params(seq, params)
+        elif requestType == METHOD.GET_PARAMETER:
+            message = self.get_params(seq, params)
+        else:
+            message = self.rtsp.respond(405, seq, self.session)
 
-        seq = request[1].split(' ')[1]
-
-        if requestType == 'SETUP':
-            rtpPort = request[2].split(' ')[3]
-            self.setup(filename, seq, rtpPort)
-        elif requestType == 'PLAY':
-            self.play(seq)
-        elif requestType == 'PAUSE':
-            self.pause(seq)
-        elif requestType == 'TEARDOWN':
-            self.teardown(seq)
+        connSocket = self.connSocket
+        connSocket.send(message.encode())
 
     def setup(self, filename, seq, rtpPort):
         if self.state == self.INIT:
             try:
-                # self.videoStream = VideoStream(filename)
-                # self.videoStream = JpgsStream(filename)
-                self.videoStream = Mp4Stream(filename)
+                if filename.endswith('.mp4'):
+                    self.videoStream = Mp4Stream(filename)
+                elif filename.endswith('.mjpg') or filename.endswith('.mjpeg'):
+                    self.videoStream = VideoStream(filename)
+                else:
+                    self.videoStream = JpgsStream(filename)
+
                 self.state = self.READY
             except IOError:
-                self.respond(404, seq)
+                message = self.rtsp.respond(404, seq, self.session)
+                return message
 
-            self.session = random.randint(100000,999999)
-            self.respond(200, seq)
+            self.session = random.randint(100000, 999999)
+            message = self.rtsp.respond(200, seq, self.session)
             self.rtpPort = int(rtpPort)
+            return message
+
+    def set_params(self, seq, params):
+        paramList = []
+        for key in params.keys():
+            self.params[key] = params[key]
+            paramList.append(key)
+        message = self.rtsp.respond(200, seq, self.session, args=paramList)
+        return message
+
+    def get_params(self, seq, params):
+        paramDict = {}
+        for param in params:
+            try:
+                paramDict[param] = self.params.get(param)
+            except:
+                print('Error: No value {} found'.format(param))
+                self.rtsp.respond(451, seq, self.session)
+                return
+        message = self.rtsp.respond(200, seq, self.session, kwargs=paramDict)
+        return message
 
     def play(self, seq):
         if self.state == self.READY:
             self.state = self.PLAYING
-
             self.rtpSocket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            self.event = threading.Event()
+            # self.event = threading.Event()
             self.worker = threading.Thread(target=self.sendRtp)
+            self.worker.setDaemon(True)
             self.worker.start()
-            self.respond(200, seq)
         elif self.state == self.PAUSE:
             self.state = self.PLAYING
+        message = self.rtsp.respond(200, seq, self.session)
+        return message
 
     def pause(self,seq):
         if self.state == self.PLAYING:
             self.state = self.READY
             self.event.set()
-            self.respond(200, seq)
+            message = self.rtsp.respond(200, seq, self.session)
+        else:
+            message = self.rtsp.respond(455, seq, self.session)
+        return message
 
     def teardown(self, seq):
         self.event.set()
-        self.respond(200, seq)
-        self.rtpSocket.close()
+        message = self.rtsp.respond(200, seq, self.session)
+        if self.rtpSocket:
+            self.rtpSocket.close()
+        return message
 
     def sendRtp(self):
 
@@ -103,9 +155,8 @@ class Server:
 
         while True:
             # self.event.wait(0.0166)
-
             if self.event.isSet():
-                break
+                return
 
             data = self.videoStream.nextFrame()
             if data:
@@ -139,6 +190,9 @@ class Server:
 
         return rtpPacket.getPacket()
 
+def newServer(connSocket, address):
+    Server(connSocket, address).run()
+
 def main(port):
     rtspSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     rtspSocket.bind(('', port))
@@ -146,11 +200,15 @@ def main(port):
 
     while True:
         connSocket, address = rtspSocket.accept()
-        Server(connSocket, address).run()
+        t= threading.Thread(target=newServer, args=(connSocket, address))
+        t.setDaemon(True)
+        t.start()
 
 if __name__ == '__main__':
     try:
-        port = sys.argv[1]
-        main(int(port))
+        # port = sys.argv[1]
+        # main(int(port))
+        port = 8000
+        main(port)
     except:
         raise Exception('argv incorrect')

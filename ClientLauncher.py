@@ -1,12 +1,13 @@
-import Client
+# -*- coding: utf-8 -*-
+# import Client
 from tkinter import *
 from tkinter import Tk
 
-from Client import Client
+# from Client import Client
 #
 serverAddr = "127.0.0.1"
 serverPort = 8000
-rtpPort = 12453
+rtpPort = 12455
 fileName = "Sekiro.mp4"
 # root = Tk()
 # client = Client(root, serverAddr, serverPort, rtpPort, fileName)
