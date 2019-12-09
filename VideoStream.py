@@ -10,7 +10,27 @@ class VideoStream:
         except Exception:
             print('cannot read', filename)
             raise IOError
+        self.frameCnt = self._getFrameCnt()
         self.frameNum = 0
+
+    def _getFrameCnt(self):
+        self.file.seek(0)
+
+        self.frameSets = []
+        pos = 0
+        while True:
+            try:
+                _, framePos = self._nextFrame()
+                self.frameSets.append(pos)
+                pos += framePos
+            except:
+                break
+
+        self.file.seek(0)
+        return len(self.frameSets)
+
+    def getFrameCnt(self):
+        return self.frameCnt
 
     def byte2int(self, byteArr):
 
@@ -24,7 +44,7 @@ class VideoStream:
         print(dec)
         return dec
 
-    def nextFrame(self):
+    def _nextFrame(self):
         data = self.file.read(5)
         data = bytearray(data)
 
@@ -39,7 +59,11 @@ class VideoStream:
 
             self.frameNum = self.frameNum + 1
 
-            return frame
+            return frame, frameLength
+
+    def nextFrame(self):
+        frame, _ = self._nextFrame()
+        return frame
 
     def getFrameNum(self):
         return self.frameNum
@@ -64,6 +88,9 @@ class JpgsStream:
             self.frameNum = self.frameNum + 1
 
             return frame
+
+    def getFrameCnt(self):
+        return len(self.files)
 
 
     def getFrameNum(self):
@@ -103,3 +130,6 @@ class Mp4Stream:
 
     def getFrameNum(self):
         return self.frameNum
+
+    def getFrameCnt(self):
+        return self.frameCnt
