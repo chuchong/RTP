@@ -110,20 +110,29 @@ class Mp4Stream:
         self.fps = self.capture.get(cv2.CAP_PROP_FPS)
         self.frameCnt = self.capture.get(cv2.CAP_PROP_FRAME_COUNT)
         self.totalTime = self.frameCnt / self.fps
+        self.quality = 100
 
 
     def nextFrame(self):
         # if self.capture.get(cv2.CAP_PROP_POS_MSEC) > self.totalTime:
         #     return None
 
+        # 动态调整图片大小
+        if self.frameNum % 10 == 0 and self.quality < 100:
+            self.quality += 10
+
         success , image = self.capture.read()
         if success:
             print("sending images")
             self.frameNum += 1
             # imageBytes = cv2.imencode('.jpg', image)[1].tostring()
-            quality = 25
-            q = [int(cv2.IMWRITE_JPEG_QUALITY), quality]
-            imageBytes = cv2.imencode('.jpg', image, q)[1].tobytes()
+
+            while True:
+                q = [int(cv2.IMWRITE_JPEG_QUALITY), self.quality]
+                imageBytes = cv2.imencode('.jpg', image, q)[1].tobytes()
+                if len(imageBytes) < 65535 * 8:
+                    break
+                self.quality -= 10
             return imageBytes
 
         return None
