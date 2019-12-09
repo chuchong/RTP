@@ -41,7 +41,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
     SLIDER_SIZE = 255
     def __init__(self, serveraddr, serverport, rtpport, filename):
         super().__init__()
-
+        # 原client的
         self.setupUi(self)
         self.serverAddr = serveraddr
         self.serverPort = int(serverport)
@@ -51,7 +51,13 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.sessionId = 0
         self.requestSent = -1
         self.teardownAcked = 0
+
         self.connectToServer()
+        # 我用来初始化的
+        self.basicFps = 0
+        self.fps = 0
+        self.speed = 1
+
         self.bufferQueue = queue.Queue() # 多线程显示缓存的列表
         self.rtsp = Rtsp()
         self.params = {}
@@ -71,6 +77,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.pause.clicked.connect(self.pauseMovie)
         self.teardown.clicked.connect(self.exitClient)
         self.timer.timeout.connect(self.refreshSlider)
+        self.speedBox.currentIndexChanged.connect(self.changeSpeedBox)
+
 
     def sendRequest(self, *args, **kwargs):
         self.rtspSeq += 1
@@ -78,6 +86,15 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                                     self.sessionId, *args, **kwargs)
         self.rtspSocket.send(message.encode())
         self.recvRtspReply()
+
+    def changeSpeed(self, speed):
+        self.fps = int(self.basicFps * speed)
+        self.cycle = 1 / self.fps
+
+    @qt_exception_wrapper
+    def changeSpeedBox(self):
+        speed = float(self.speedBox.currentText())
+        self.changeSpeed(speed)
 
     @qt_exception_wrapper
     def pressSlider(self):
@@ -120,8 +137,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             fps = Rtsp.getParamFromEnum(PARAM.FPS)
             self.sendRequest(frame_cnt, fps)
             self.frame_cnt = float(self.params[Rtsp.getParamFromEnum(PARAM.FRAME_CNT)])
-            self.fps = int(float(self.params[fps]))
-            self.cycle = 1 / self.fps
+            self.basicFps = int(float(self.params[fps]))
+            self.changeSpeed(self.speed)
 
     @qt_exception_wrapper
     def exitClient(self):
