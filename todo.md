@@ -7,7 +7,8 @@ TODO:
 5. search video (using http)
 6. 实现音频
 7. 分包
-8. 转ts
+8. rtcp
+9. 转ts
 
 RTSP
 
