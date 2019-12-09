@@ -28,16 +28,6 @@ class Server:
         self.event = threading.Event()
         self.session = 0
 
-    # def respond(self, code, seq):
-    #     if code == 200:
-    #         reply = 'RTSP/1.0 200 OK\nCSeq: ' + str(seq) + '\nSession: '+ str(self.session)
-    #         connSocket = self.connSocket
-    #         connSocket.send(reply.encode())
-    #
-    #     else:
-    #         print("Error: code is not 200")
-
-
     def run(self):
         self.recvRtspRequest()
 
@@ -97,6 +87,7 @@ class Server:
             self.session = random.randint(100000, 999999)
             message = self.rtsp.respond(200, seq, self.session)
             self.rtpPort = int(rtpPort)
+            self.params[Rtsp.getParamFromEnum(PARAM.FRAME_CNT)] = self.videoStream.getFrameCnt()
             return message
 
     def set_params(self, seq, params):
@@ -124,11 +115,16 @@ class Server:
             self.state = self.PLAYING
             self.rtpSocket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             # self.event = threading.Event()
+            self.event.clear()
             self.worker = threading.Thread(target=self.sendRtp)
             self.worker.setDaemon(True)
             self.worker.start()
         elif self.state == self.PAUSE:
             self.state = self.PLAYING
+            self.event.clear()
+            self.worker = threading.Thread(target=self.sendRtp)
+            self.worker.setDaemon(True)
+            self.worker.start()
         message = self.rtsp.respond(200, seq, self.session)
         return message
 
@@ -156,7 +152,8 @@ class Server:
         while True:
             # self.event.wait(0.0166)
             if self.event.isSet():
-                return
+                print("set event")
+                break
 
             data = self.videoStream.nextFrame()
             if data:

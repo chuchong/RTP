@@ -11,9 +11,13 @@ class METHOD(enum.Enum):
     GET_PARAMETER = 4
     SET_PARAMETER = 5
 
+class PARAM(enum.Enum):
+    FRAME_CNT = 0 # 总的帧数
 
 class Rtsp:
     """产生rtsp通讯字符串"""
+    params = {
+        PARAM.FRAME_CNT:'frame_cnt'}
     methods = ['SETUP', 'PLAY', 'PAUSE',
                'TEARDOWN', 'GET_PARAMETER', 'SET_PARAMETER']
     rtspVersion = 'RTSP/1.0'
@@ -35,6 +39,10 @@ class Rtsp:
             551: 'Option not supported'
             }
     reg = re.compile('^(.*): (.*)$')
+
+    @classmethod
+    def getParamFromEnum(cls, paramEnum):
+        return cls.params[paramEnum]
 
     def respond(self, code,  seq, session, args=[], kwargs={}):
         """warning: args时mutable的,也就是说只会被初始化一次,默认初始化时请不要修改其值"""
@@ -107,6 +115,8 @@ class Rtsp:
             params.append(line)
         return params
 
+
+
     def parseReplyNormal(self, data):
         """用于一般reply的parse"""
         lines = str(data).splitlines()
@@ -120,7 +130,7 @@ class Rtsp:
     def parseReplyGet(self, data):
         """request 为 get时调用这个"""
         lines = str(data).splitlines()
-        seqNum, session = self.parseReplyNormal(''.join(lines[:3]))
+        seqNum, session = self.parseReplyNormal('\n'.join(lines[:3]))
 
         params = self.getDictParams(lines[4:])
 
@@ -129,7 +139,7 @@ class Rtsp:
     def parseReplySet(self, data):
         """request为 set时调用这个"""
         lines = str(data).splitlines()
-        seqNum, session = self.parseReplyNormal(''.join(lines[:3]))
+        seqNum, session = self.parseReplyNormal('\n'.join(lines[:3]))
 
         params = self.getParams(lines[4:])
 

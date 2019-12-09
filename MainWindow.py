@@ -13,6 +13,7 @@ import socket
 from PyQt5.QtWidgets import *
 from PyQt5.QtGui import *
 from PyQt5.QtCore import *
+from PyQt5.QtCore import QTimer
 from clientUI import Ui_MainWindow
 from RtpPacket import RtpPacket
 from Rtsp import *
@@ -35,6 +36,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
     READY = 1
     PLAYING = 2
     state = INIT
+
+    SLIDER_SIZE = 255
     def __init__(self, serveraddr, serverport, rtpport, filename):
         super().__init__()
 
@@ -53,16 +56,19 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.rtsp = Rtsp()
         self.params = {}
         self.onRtp = False # 是否正在使用rtp进行传输
+        self.frame_cnt = 0
+        self.frame_pos = 0
 
+        self.slider.setMaximum(self.SLIDER_SIZE)
         self.init.clicked.connect(self.setupMovie)
         self.play.clicked.connect(self.playMovie)
         self.pause.clicked.connect(self.pauseMovie)
         self.teardown.clicked.connect(self.exitClient)
 
-    def sendRequest(self):
+    def sendRequest(self, *args, **kwargs):
         self.rtspSeq += 1
         message = self.rtsp.request(self.requestSent, self.fileName, self.rtpPort, self.rtspSeq,
-                                    self.sessionId)
+                                    self.sessionId, *args, **kwargs)
         self.rtspSocket.send(message.encode())
         self.recvRtspReply()
 
@@ -72,6 +78,9 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         if self.state == self.INIT:
             self.requestSent = METHOD.SETUP
             self.sendRequest()
+            self.requestSent = METHOD.GET_PARAMETER
+            self.sendRequest(Rtsp.getParamFromEnum(PARAM.FRAME_CNT))
+            self.frame_cnt = self.params[Rtsp.getParamFromEnum(PARAM.FRAME_CNT)]
 
     @qt_exception_wrapper
     def exitClient(self):
@@ -107,10 +116,14 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             t.setDaemon(True)
             t.start()
 
+            self.timer = QTimer(self)
+            self.timer.timeout.connect(self.refreshSlider)
+            self.timer.start(20)
+
     def listenRtp(self):
         """Listen for RTP packets."""
         while True:
-            print('listen')
+            # print('listen')
             try:
                 data = self.rtpSocket.recv(65535)
                 if data:
@@ -137,12 +150,17 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 if self.teardownAcked == 1:
                     self.rtpSocket.shutdown(socket.SHUT_RDWR)
                     self.rtpSocket.close()
-                    return
 
+    @qt_exception_wrapper
+    def refreshSlider(self):
+        ratio = float(self.frame_pos) / float(self.frame_cnt)
+        pos = int(ratio * self.SLIDER_SIZE)
+        self.slider.setValue(pos)
+
+    @qt_exception_wrapper
     def refreshFrame(self):
         # 多线程显示图片
         while True:
-            print('refresh')
             try:
                 if self.playEvent.isSet():
                     return
@@ -156,7 +174,9 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 # stime = time.time()
                 # rtpPacket = self.buffer.pop(0)
                 rtpPacket = self.buffer.get()
-                print(rtpPacket.seqNum())
+                self.frame_pos = rtpPacket.seqNum()
+                # ratio = (self.SLIDER_SIZE * seqNum / self.frame_cnt)
+                # self.slider.setValue(int(ratio))
                 self.updateMovie(rtpPacket.getPayload())
                 # self.updateMovie(self.writeFrame(rtpPacket.getPayload()))
 
