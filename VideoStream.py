@@ -61,6 +61,9 @@ class VideoStream:
 
             return frame, frameLength
 
+    def setCurFrame(self, frame):
+        self.frameNum = frame
+
     def nextFrame(self):
         frame, _ = self._nextFrame()
         return frame
@@ -96,6 +99,9 @@ class JpgsStream:
     def getFrameNum(self):
         return self.frameNum
 
+    def setCurFrame(self, frame):
+        self.frameNum = frame
+
 class Mp4Stream:
     """用opencv提取序列帧"""
     def __init__(self, filename):
@@ -112,6 +118,9 @@ class Mp4Stream:
         self.totalTime = self.frameCnt / self.fps
         self.quality = 100
 
+    def setCurFrame(self, frame):
+        self.capture.set(cv2.CAP_PROP_POS_FRAMES, frame)
+        self.frameNum = frame
 
     def nextFrame(self):
         # if self.capture.get(cv2.CAP_PROP_POS_MSEC) > self.totalTime:

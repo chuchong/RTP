@@ -51,19 +51,23 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.requestSent = -1
         self.teardownAcked = 0
         self.connectToServer()
-        self.frameNbr = 0
         self.buffer = queue.Queue() # 多线程显示缓存的列表
         self.rtsp = Rtsp()
         self.params = {}
-        self.onRtp = False # 是否正在使用rtp进行传输
+        self.rtpLock = threading.Lock()
+        self.refreshLock = threading.Lock()
         self.frame_cnt = 0
         self.frame_pos = 0
+        self.timer = QTimer(self)
 
         self.slider.setMaximum(self.SLIDER_SIZE)
+        self.slider.sliderPressed.connect(self.pressSlider)
+        self.slider.sliderReleased.connect(self.releaseSlider)
         self.init.clicked.connect(self.setupMovie)
         self.play.clicked.connect(self.playMovie)
         self.pause.clicked.connect(self.pauseMovie)
         self.teardown.clicked.connect(self.exitClient)
+        self.timer.timeout.connect(self.refreshSlider)
 
     def sendRequest(self, *args, **kwargs):
         self.rtspSeq += 1
@@ -73,6 +77,36 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.recvRtspReply()
 
     @qt_exception_wrapper
+    def pressSlider(self):
+        if self.state != self.INIT:
+            self.timer.stop()
+            self.preSliderValue = self.slider.value()
+
+    @qt_exception_wrapper
+    def releaseSlider(self):
+        dirtyFlag = False #脏标记表示是否已经暂停了
+        if self.state == self.READY:
+            dirtyFlag = True
+        if self.state != self.INIT:
+            if self.state == self.PLAYING:
+                self.pauseMovie()
+            value = self.slider.value()
+            if value != self.preSliderValue:
+                ratio = value / self.SLIDER_SIZE
+
+                self.frame_pos = int(ratio * self.frame_cnt)
+                assert(Rtsp.params[PARAM.FRAME_POS]=='frame_pos')#由于kwargs没有那么智能,只能这样了
+                self.requestSent = METHOD.SET_PARAMETER
+                self.sendRequest(frame_pos=self.frame_pos)
+                # 重新播放
+                self.state = self.READY
+                self.playMovie()
+
+                if dirtyFlag:
+                    self.pauseMovie()
+
+
+    @qt_exception_wrapper
     def setupMovie(self):
         """Setup button handler."""
         if self.state == self.INIT:
@@ -80,7 +114,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self.sendRequest()
             self.requestSent = METHOD.GET_PARAMETER
             self.sendRequest(Rtsp.getParamFromEnum(PARAM.FRAME_CNT))
-            self.frame_cnt = self.params[Rtsp.getParamFromEnum(PARAM.FRAME_CNT)]
+            self.frame_cnt = float(self.params[Rtsp.getParamFromEnum(PARAM.FRAME_CNT)])
 
     @qt_exception_wrapper
     def exitClient(self):
@@ -116,12 +150,12 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             t.setDaemon(True)
             t.start()
 
-            self.timer = QTimer(self)
-            self.timer.timeout.connect(self.refreshSlider)
+
             self.timer.start(20)
 
     def listenRtp(self):
         """Listen for RTP packets."""
+        self.rtpLock.acquire()
         while True:
             # print('listen')
             try:
@@ -136,41 +170,43 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
                     # print("Current Seq Num: " + str(currFrameNbr))
                     #
-                    if currFrameNbr > self.frameNbr:  # Discard the late packet
+                    if currFrameNbr > self.frame_pos:  # Discard the late packet
                         self.buffer.put(rtpPacket)
-                        self.frameNbr = currFrameNbr
+                        # self.frame_pos = currFrameNbr
                         # self.updateMovie(self.writeFrame(rtpPacket.getPayload()))
             except:
                 # Stop listening upon requesting PAUSE or TEARDOWN
                 if self.playEvent.isSet():
-                    return
+                    break
 
                 # Upon receiving ACK for TEARDOWN request,
                 # close the RTP socket
                 if self.teardownAcked == 1:
                     self.rtpSocket.shutdown(socket.SHUT_RDWR)
                     self.rtpSocket.close()
-
+        self.rtpLock.release()
     @qt_exception_wrapper
     def refreshSlider(self):
-        ratio = float(self.frame_pos) / float(self.frame_cnt)
-        pos = int(ratio * self.SLIDER_SIZE)
-        self.slider.setValue(pos)
+        if self.state != self.INIT:
+            ratio = float(self.frame_pos) / float(self.frame_cnt)
+            pos = int(ratio * self.SLIDER_SIZE)
+            self.slider.setValue(pos)
 
     @qt_exception_wrapper
     def refreshFrame(self):
         # 多线程显示图片
+        self.refreshLock.acquire()
         while True:
             try:
                 if self.playEvent.isSet():
-                    return
+                    break
 
                 # Upon receiving ACK for TEARDOWN request,
                 # close the RTP socket
                 if self.teardownAcked == 1:
                     # self.rtpSocket.shutdown(socket.SHUT_RDWR)
                     # self.rtpSocket.close()
-                    return
+                    break
                 # stime = time.time()
                 # rtpPacket = self.buffer.pop(0)
                 rtpPacket = self.buffer.get()
@@ -183,7 +219,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             except Exception as e:
                 # 可能是没图片了
                 print(e)
-                return
+        self.refreshLock.release()
             # etime = time.time()
             # deltaTime = etime - stime #差值为s为单位
             # remainTime = 0.05 - deltaTime

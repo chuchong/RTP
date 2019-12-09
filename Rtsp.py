@@ -11,13 +11,17 @@ class METHOD(enum.Enum):
     GET_PARAMETER = 4
     SET_PARAMETER = 5
 
+@enum.unique
 class PARAM(enum.Enum):
     FRAME_CNT = 0 # 总的帧数
+    FRAME_POS = 1 # 当前帧
+
 
 class Rtsp:
     """产生rtsp通讯字符串"""
     params = {
-        PARAM.FRAME_CNT:'frame_cnt'}
+        PARAM.FRAME_CNT:'frame_cnt',
+        PARAM.FRAME_POS: 'frame_pos'}
     methods = ['SETUP', 'PLAY', 'PAUSE',
                'TEARDOWN', 'GET_PARAMETER', 'SET_PARAMETER']
     rtspVersion = 'RTSP/1.0'
@@ -161,7 +165,7 @@ class Rtsp:
             params = self.getParams(request[4:])
             return requestType, filename, seq, None, session, params
         elif requestType == METHOD.SET_PARAMETER:
-            params = self.getDictParams(requestType[4:])
+            params = self.getDictParams(request[4:])
             return requestType, filename, seq, None, session, params
         else:
             return requestType, filename, seq, None, session, None

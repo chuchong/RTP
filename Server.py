@@ -26,6 +26,7 @@ class Server:
         self.rtpSocket = None
         self.params = {}
         self.event = threading.Event()
+        self.rtpLock = threading.Lock()
         self.session = 0
 
     def run(self):
@@ -94,6 +95,8 @@ class Server:
         paramList = []
         for key in params.keys():
             self.params[key] = params[key]
+            if key == Rtsp.params[PARAM.FRAME_POS]:
+                self.videoStream.setCurFrame(int(self.params[key]))
             paramList.append(key)
         message = self.rtsp.respond(200, seq, self.session, args=paramList)
         return message
@@ -146,6 +149,7 @@ class Server:
 
     def sendRtp(self):
 
+        self.rtpLock.acquire()
         counter = 0
         thresold = 10
 
@@ -167,6 +171,7 @@ class Server:
                 except:
                     print('error happen')
                     traceback.print_exc(file=sys.stdout)
+        self.rtpLock.release()
 
     def makeRtp(self, data, frameNum):
 

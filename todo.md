@@ -1,6 +1,6 @@
 TODO:
 
-1. reposition
+1. ~~reposition~~
 2. change of play speed
 3. report
 4. full screen
