@@ -10,6 +10,7 @@ import os
 import threading
 import queue
 import socket
+import time
 from PyQt5.QtWidgets import *
 from PyQt5.QtGui import *
 from PyQt5.QtCore import *
@@ -51,9 +52,11 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.requestSent = -1
         self.teardownAcked = 0
         self.connectToServer()
-        self.buffer = queue.Queue() # 多线程显示缓存的列表
+        self.bufferQueue = queue.Queue() # 多线程显示缓存的列表
         self.rtsp = Rtsp()
         self.params = {}
+        self.playEvent = threading.Event()
+        self.playLock = threading.Lock()
         self.rtpLock = threading.Lock()
         self.refreshLock = threading.Lock()
         self.frame_cnt = 0
@@ -78,8 +81,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
     @qt_exception_wrapper
     def pressSlider(self):
+        self.timer.stop()
         if self.state != self.INIT:
-            self.timer.stop()
             self.preSliderValue = self.slider.value()
 
     @qt_exception_wrapper
@@ -113,12 +116,17 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self.requestSent = METHOD.SETUP
             self.sendRequest()
             self.requestSent = METHOD.GET_PARAMETER
-            self.sendRequest(Rtsp.getParamFromEnum(PARAM.FRAME_CNT))
+            frame_cnt = Rtsp.getParamFromEnum(PARAM.FRAME_CNT)
+            fps = Rtsp.getParamFromEnum(PARAM.FPS)
+            self.sendRequest(frame_cnt, fps)
             self.frame_cnt = float(self.params[Rtsp.getParamFromEnum(PARAM.FRAME_CNT)])
+            self.fps = int(float(self.params[fps]))
+            self.cycle = 1 / self.fps
 
     @qt_exception_wrapper
     def exitClient(self):
         """Teardown button handler."""
+        # 不用考虑同步,关了就行
         try:
             self.requestSent = METHOD.TEARDOWN
             self.sendRequest()
@@ -129,29 +137,49 @@ class MainWindow(QMainWindow, Ui_MainWindow):
     @qt_exception_wrapper
     def pauseMovie(self):
         """Pause button handler."""
+        # 暂停必然需要跳出了playLock
+
         if self.state == self.PLAYING:
             self.requestSent = METHOD.PAUSE
             self.sendRequest()
+            # TODO 检查这里同步的正确性
+            # 需要完全跳出playloop才能进行后续操作
+            self.playLock.acquire()
+            self.playLock.release()
 
     @qt_exception_wrapper
     def playMovie(self):
         """Play button handler."""
         if self.state == self.READY:
             # Create a new thread to listen for RTP packets
+            self.requestSent = METHOD.SET_PARAMETER
+            self.sendRequest(frame_pos=self.frame_pos)
 
-            self.playEvent = threading.Event()
             self.playEvent.clear()
             self.requestSent = METHOD.PLAY
             self.sendRequest()
-            t = threading.Thread(target=self.refreshFrame)
-            t.setDaemon(True) # 后台线程号结束
-            t.start()
-            t = threading.Thread(target=self.listenRtp)
+            t = threading.Thread(target=self.playLoop)
             t.setDaemon(True)
             t.start()
-
-
             self.timer.start(20)
+
+    def playLoop(self):
+        # 播放的主循环,主要要使用其来同步listen和refresh
+        self.playLock.acquire()
+        t = threading.Thread(target=self.refreshFrame)
+        t.setDaemon(True)  # 后台线程号结束
+        t.start()
+        t = threading.Thread(target=self.listenRtp)
+        t.setDaemon(True)
+        t.start()
+        self.refreshLock.acquire()
+        self.rtpLock.acquire()
+        # 当两个都结束时,析构一些变量
+        self.bufferQueue = queue.Queue()
+        self.refreshLock.release()
+        self.rtpLock.release()
+        # playLoop全局只有一个保证了refreshLock不会死锁
+        self.playLock.release()
 
     def listenRtp(self):
         """Listen for RTP packets."""
@@ -165,25 +193,16 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                     rtpPacket.decode(data)
 
                     currFrameNbr = rtpPacket.seqNum()
-                    # print('receive ', currFrameNbr)
-                    # self.buffer.append(rtpPacket)
 
-                    # print("Current Seq Num: " + str(currFrameNbr))
-                    #
                     if currFrameNbr > self.frame_pos:  # Discard the late packet
-                        self.buffer.put(rtpPacket)
-                        # self.frame_pos = currFrameNbr
-                        # self.updateMovie(self.writeFrame(rtpPacket.getPayload()))
+                        self.bufferQueue.put(rtpPacket)
             except:
-                # Stop listening upon requesting PAUSE or TEARDOWN
-                if self.playEvent.isSet():
-                    break
-
-                # Upon receiving ACK for TEARDOWN request,
-                # close the RTP socket
                 if self.teardownAcked == 1:
                     self.rtpSocket.shutdown(socket.SHUT_RDWR)
                     self.rtpSocket.close()
+
+                if self.playEvent.isSet():
+                    break
         self.rtpLock.release()
     @qt_exception_wrapper
     def refreshSlider(self):
@@ -194,38 +213,31 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
     @qt_exception_wrapper
     def refreshFrame(self):
+        """根据fps从队列中回复图像"""
         # 多线程显示图片
         self.refreshLock.acquire()
+
         while True:
+            stime = time.time()
             try:
                 if self.playEvent.isSet():
                     break
 
-                # Upon receiving ACK for TEARDOWN request,
-                # close the RTP socket
                 if self.teardownAcked == 1:
-                    # self.rtpSocket.shutdown(socket.SHUT_RDWR)
-                    # self.rtpSocket.close()
                     break
-                # stime = time.time()
-                # rtpPacket = self.buffer.pop(0)
-                rtpPacket = self.buffer.get()
+                rtpPacket = self.bufferQueue.get()
                 self.frame_pos = rtpPacket.seqNum()
-                # ratio = (self.SLIDER_SIZE * seqNum / self.frame_cnt)
-                # self.slider.setValue(int(ratio))
                 self.updateMovie(rtpPacket.getPayload())
-                # self.updateMovie(self.writeFrame(rtpPacket.getPayload()))
-
             except Exception as e:
-                # 可能是没图片了
+                #TODO rtcp可调整
                 print(e)
+            etime = time.time()
+            deltaTime = etime - stime
+            if deltaTime < self.cycle:
+                time.sleep(self.cycle - deltaTime)
+            else:
+                pass# TODO 用rtcp调整
         self.refreshLock.release()
-            # etime = time.time()
-            # deltaTime = etime - stime #差值为s为单位
-            # remainTime = 0.05 - deltaTime
-            # if remainTime > 0:
-            #     time.sleep(remainTime)
-
 
     def updateMovie(self, imageBytes):
         """Update the image file as video frame in the GUI."""

@@ -89,6 +89,7 @@ class Server:
             message = self.rtsp.respond(200, seq, self.session)
             self.rtpPort = int(rtpPort)
             self.params[Rtsp.getParamFromEnum(PARAM.FRAME_CNT)] = self.videoStream.getFrameCnt()
+            self.params[Rtsp.getParamFromEnum(PARAM.FPS)] = self.videoStream.getFps()
             return message
 
     def set_params(self, seq, params):
@@ -167,7 +168,7 @@ class Server:
                     self.rtpSocket.sendto(self.makeRtp(data, frameNum),
                                       (self.clientAddress[0],#accept 返回的address 是二元组
                                        port))
-                    time.sleep(0.05)
+                    # time.sleep(0.05)
                 except:
                     print('error happen')
                     traceback.print_exc(file=sys.stdout)

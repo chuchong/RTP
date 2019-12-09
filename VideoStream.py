@@ -1,6 +1,6 @@
 import os
 import cv2
-
+DEFAULT_FPS = 24
 class VideoStream:
     """mjpeg/mjpg格式用的stream"""
     def __init__(self, filename):
@@ -71,6 +71,9 @@ class VideoStream:
     def getFrameNum(self):
         return self.frameNum
 
+    def getFps(self):
+        return DEFAULT_FPS #这个不清楚
+
 
 class JpgsStream:
     """mjpeg/mjpg格式用的stream"""
@@ -101,6 +104,9 @@ class JpgsStream:
 
     def setCurFrame(self, frame):
         self.frameNum = frame
+
+    def getFps(self):
+        return DEFAULT_FPS #这个不清楚
 
 class Mp4Stream:
     """用opencv提取序列帧"""
@@ -151,3 +157,7 @@ class Mp4Stream:
 
     def getFrameCnt(self):
         return self.frameCnt
+
+    def getFps(self):
+        return self.fps
+
