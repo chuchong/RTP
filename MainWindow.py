@@ -19,6 +19,7 @@ from clientUI import Ui_MainWindow
 from RtpPacket import RtpPacket
 from Rtsp import *
 from FullScreenWindows import FullScreenWindow
+from signal import RtpSignals
 
 #用于显示bug,只放在最顶层的函数上
 CACHE_FILE_EXT = ".jpg"
@@ -43,6 +44,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
     SMALL_SCREEN = 1
 
     SLIDER_SIZE = 255
+
     def __init__(self, serveraddr, serverport, rtpport, filename):
         super().__init__()
         # 原client的
@@ -60,7 +62,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.connectToServer()
 
         # 子窗口
-        self.sonWidget = FullScreenWindow()
+        self.sonWidget = FullScreenWindow(None, self)
         # self.sonWidget.hide()
         # 我用来初始化的
         self.basicFps = 0
@@ -84,6 +86,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.slider.setMaximum(self.SLIDER_SIZE)
         self.slider.sliderPressed.connect(self.pressSlider)
         self.slider.sliderReleased.connect(self.releaseSlider)
+        self.slider.setSingleStep(0)
+        self.slider.setPageStep(0)
         self.init.clicked.connect(self.setupMovie)
         self.play.clicked.connect(self.playMovie)
         self.pause.clicked.connect(self.pauseMovie)
@@ -99,11 +103,32 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.sonWidget.exit.clicked.connect(self.switchDisplay)
         self.sonWidget.comboBox.currentIndexChanged.connect(self.changeSpeedBox)
 
+
+
         # 和子窗口的东西
         self.playLabel = self.label
         self.curBox = self.speedBox
         self.curSlider = self.slider
 
+        self.rtpSignals = RtpSignals(self.sonWidget)
+        self.rtpSignals.AnimeSignal.connect(self.sonAnime)
+        self.rtpSignals.ReAnimeSignal.connect(self.sonReAnime)
+        self.sonLock=threading.Lock()
+
+    def onSendAnime(self):
+        self.rtpSignals.AnimeSignal.emit()
+
+    def onSendReAnime(self):
+        self.rtpSignals.ReAnimeSignal.emit()
+
+    def sonAnime(self):
+        self.sonLock.acquire()
+        self.sonWidget.anime()
+        self.sonLock.release()
+    def sonReAnime(self):
+        self.sonLock.acquire()
+        self.sonWidget.reAnime()
+        self.sonLock.release()
     def sendRequest(self, *args, **kwargs):
         self.rtspSeq += 1
         message = self.rtsp.request(self.requestSent, self.fileName, self.rtpPort, self.rtspSeq,
@@ -119,21 +144,24 @@ class MainWindow(QMainWindow, Ui_MainWindow):
     def switchDisplay(self):
         if self.state != self.INIT:
             if self.displayType == self.FULL_SCREEN:
+                self.show()
+                self.sonWidget.exitToPar()
                 self.displayType = self.SMALL_SCREEN
                 self.playLabel = self.label
                 self.curBox = self.speedBox
                 self.curSlider = self.slider
-                self.sonWidget.hide()
-                self.show()
+                # self.sonWidget.exitToPar()
+
             else:
                 self.displayType = self.FULL_SCREEN
                 # self.sonWidget.setMouseTracking(True)
-                self.sonWidget.resizeToFill()
                 self.playLabel = self.sonWidget.label
                 self.curBox = self.sonWidget.comboBox
                 self.curSlider = self.sonWidget.slider
-                self.sonWidget.show()
+                self.sonWidget.resizeToFill()
                 self.hide()
+                self.rtpSignals.start()
+
         else:
             raise Exception('Error: you need play video first')
 
@@ -306,9 +334,12 @@ class MainWindow(QMainWindow, Ui_MainWindow):
     def updateMovie(self, imageBytes):
         """Update the image file as video frame in the GUI."""
 
-        image = QImage.fromData(imageBytes)
-        pixmap = QPixmap.fromImage(image)
-        self.playLabel.setPixmap(pixmap)
+        if len(imageBytes) > 0:
+            image = QImage.fromData(imageBytes)
+            pixmap = QPixmap.fromImage(image)
+            self.sonLock.acquire()
+            self.playLabel.setPixmap(pixmap)
+            self.sonLock.release()
 
     def connectToServer(self):
         """Connect to the Server. Start a new RTSP/TCP session."""

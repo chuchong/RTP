@@ -7,7 +7,7 @@ from tkinter import Tk
 #
 serverAddr = "127.0.0.1"
 serverPort = 8000
-rtpPort = 12455
+rtpPort = 12450
 fileName = "Sekiro.mp4"
 # root = Tk()
 # client = Client(root, serverAddr, serverPort, rtpPort, fileName)
