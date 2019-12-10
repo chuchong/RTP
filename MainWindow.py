@@ -18,6 +18,7 @@ from PyQt5.QtCore import QTimer
 from clientUI import Ui_MainWindow
 from RtpPacket import RtpPacket
 from Rtsp import *
+from FullScreenWindows import FullScreenWindow
 
 #用于显示bug,只放在最顶层的函数上
 CACHE_FILE_EXT = ".jpg"
@@ -38,11 +39,15 @@ class MainWindow(QMainWindow, Ui_MainWindow):
     PLAYING = 2
     state = INIT
 
+    FULL_SCREEN = 0
+    SMALL_SCREEN = 1
+
     SLIDER_SIZE = 255
     def __init__(self, serveraddr, serverport, rtpport, filename):
         super().__init__()
         # 原client的
         self.setupUi(self)
+
         self.serverAddr = serveraddr
         self.serverPort = int(serverport)
         self.rtpPort = int(rtpport)
@@ -53,11 +58,20 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.teardownAcked = 0
 
         self.connectToServer()
+
+        # 子窗口
+        self.sonWidget = FullScreenWindow()
+        # self.sonWidget.hide()
         # 我用来初始化的
         self.basicFps = 0
         self.fps = 0
         self.speed = 1
+        self.frame_cnt = 0
+        self.frame_pos = 0
 
+        self.displayType = self.SMALL_SCREEN
+
+        # 用以显示的多线程量
         self.bufferQueue = queue.Queue() # 多线程显示缓存的列表
         self.rtsp = Rtsp()
         self.params = {}
@@ -65,8 +79,6 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.playLock = threading.Lock()
         self.rtpLock = threading.Lock()
         self.refreshLock = threading.Lock()
-        self.frame_cnt = 0
-        self.frame_pos = 0
         self.timer = QTimer(self)
 
         self.slider.setMaximum(self.SLIDER_SIZE)
@@ -76,9 +88,21 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.play.clicked.connect(self.playMovie)
         self.pause.clicked.connect(self.pauseMovie)
         self.teardown.clicked.connect(self.exitClient)
+        self.fullScreen.clicked.connect(self.switchDisplay)
         self.timer.timeout.connect(self.refreshSlider)
         self.speedBox.currentIndexChanged.connect(self.changeSpeedBox)
 
+        self.sonWidget.slider.sliderPressed.connect(self.pressSlider)
+        self.sonWidget.slider.sliderReleased.connect(self.releaseSlider)
+        self.sonWidget.play.clicked.connect(self.playMovie)
+        self.sonWidget.pause.clicked.connect(self.pauseMovie)
+        self.sonWidget.exit.clicked.connect(self.switchDisplay)
+        self.sonWidget.comboBox.currentIndexChanged.connect(self.changeSpeedBox)
+
+        # 和子窗口的东西
+        self.playLabel = self.label
+        self.curBox = self.speedBox
+        self.curSlider = self.slider
 
     def sendRequest(self, *args, **kwargs):
         self.rtspSeq += 1
@@ -92,15 +116,37 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.cycle = 1 / self.fps
 
     @qt_exception_wrapper
+    def switchDisplay(self):
+        if self.state != self.INIT:
+            if self.displayType == self.FULL_SCREEN:
+                self.displayType = self.SMALL_SCREEN
+                self.playLabel = self.label
+                self.curBox = self.speedBox
+                self.curSlider = self.slider
+                self.sonWidget.hide()
+                self.show()
+            else:
+                self.displayType = self.FULL_SCREEN
+                # self.sonWidget.setMouseTracking(True)
+                self.sonWidget.resizeToFill()
+                self.playLabel = self.sonWidget.label
+                self.curBox = self.sonWidget.comboBox
+                self.curSlider = self.sonWidget.slider
+                self.sonWidget.show()
+                self.hide()
+        else:
+            raise Exception('Error: you need play video first')
+
+    @qt_exception_wrapper
     def changeSpeedBox(self):
-        speed = float(self.speedBox.currentText())
+        speed = float(self.curBox.currentText())
         self.changeSpeed(speed)
 
     @qt_exception_wrapper
     def pressSlider(self):
         self.timer.stop()
         if self.state != self.INIT:
-            self.preSliderValue = self.slider.value()
+            self.preSliderValue = self.curSlider.value()
 
     @qt_exception_wrapper
     def releaseSlider(self):
@@ -110,7 +156,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         if self.state != self.INIT:
             if self.state == self.PLAYING:
                 self.pauseMovie()
-            value = self.slider.value()
+            value = self.curSlider.value()
             if value != self.preSliderValue:
                 ratio = value / self.SLIDER_SIZE
 
@@ -150,6 +196,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         except Exception as e:
             print(e)
         self.close()
+        self.sonWidget.close()
 
     @qt_exception_wrapper
     def pauseMovie(self):
@@ -261,7 +308,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
         image = QImage.fromData(imageBytes)
         pixmap = QPixmap.fromImage(image)
-        self.label.setPixmap(pixmap)
+        self.playLabel.setPixmap(pixmap)
 
     def connectToServer(self):
         """Connect to the Server. Start a new RTSP/TCP session."""

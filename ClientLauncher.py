@@ -17,8 +17,11 @@ fileName = "Sekiro.mp4"
 import sys
 from MainWindow import MainWindow
 from PyQt5.QtWidgets import QApplication, QMainWindow
+from FullScreenWindows import FullScreenWindow
 app = QApplication(sys.argv)
 mainWindow = MainWindow(serverAddr, serverPort, rtpPort, fileName)
 mainWindow.show()
+# mainwindow = FullScreenWindow(None)
+# mainwindow.show()
 #    mainWindow.test()
 sys.exit(app.exec_())

@@ -45,6 +45,9 @@ class Ui_MainWindow(object):
         self.label_2 = QtWidgets.QLabel(self.centralwidget)
         self.label_2.setGeometry(QtCore.QRect(30, 490, 72, 15))
         self.label_2.setObjectName("label_2")
+        self.fullScreen = QtWidgets.QPushButton(self.centralwidget)
+        self.fullScreen.setGeometry(QtCore.QRect(220, 490, 93, 28))
+        self.fullScreen.setObjectName("fullScreen")
         MainWindow.setCentralWidget(self.centralwidget)
         self.menubar = QtWidgets.QMenuBar(MainWindow)
         self.menubar.setGeometry(QtCore.QRect(0, 0, 889, 26))
@@ -70,4 +73,5 @@ class Ui_MainWindow(object):
         self.speedBox.setItemText(3, _translate("MainWindow", "0.75"))
         self.speedBox.setItemText(4, _translate("MainWindow", "0.5"))
         self.label_2.setText(_translate("MainWindow", "播放速度"))
+        self.fullScreen.setText(_translate("MainWindow", "全屏显示"))
 

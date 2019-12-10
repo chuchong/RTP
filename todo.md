@@ -1,12 +1,12 @@
 TODO:
 
 1. ~~reposition~~
-2. change of play speed
+2. ~~change of play speed~~
 3. report
-4. full screen
-5. search video (using http)
-6. 实现音频 pydub
-7. 分包
+4. 分包
+5. full screen
+6. search video (using http)
+7. 实现音频 pydub
 8. rtcp
 9. 转ts
 
