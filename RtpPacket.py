@@ -8,9 +8,9 @@ class RtpPacket:
     def __init__(self):
         pass
         
-    def encode(self, version, padding, extension, cc, seqnum, marker, pt, ssrc, payload):
+    def encode(self, version, padding, extension, cc, seqnum, marker, pt, ssrc, timestamp, payload):
         """Encode the RTP packet with header fields and payload."""
-        timestamp = int(time())
+        # timestamp = int(time())
         header = bytearray(HEADER_SIZE)
         
         # Fill the header bytearray with RTP header fields
@@ -31,7 +31,10 @@ class RtpPacket:
         
         # Get the payload from the argument
         self.payload = payload
-        
+
+    def marker(self):
+        return int(self.header[1] >> 7)
+
     def decode(self, byteStream):
         """Decode the RTP packet."""
         self.header = bytearray(byteStream[:HEADER_SIZE])
@@ -68,56 +71,82 @@ class RtpPacket:
 class UncompressedRtp(RtpPacket):
     """uncompressed video rtp"""
     """https://tools.ietf.org/html/rfc4175"""
+    """对于progressive 的frame串,时间戳一样"""
+    """但是seq在变大"""
+    """consecutive中f 和 c都为0(intrlaced的f会交错"""
+    """offset是多少像素,我这里jpg截图分割成多个packet也不清楚,干脆表示length的累计和"""
+    """lineNo 是一样的,我在这里就假定为frame的偏移量"""
+    """length 当前包中数据量 按照4字节算"""
+    """"""
     extendedHeader = bytearray(UNCOMPRESSED_HEADER)
 
     def __init__(self):
         super(UncompressedRtp, self).__init__()
-        self.pattern = bytearray(6)
+
+    def extendDecode(self, byteStream):
+        """Decode the RTP packet."""
+        self.extendedHeader = bytearray(byteStream[:UNCOMPRESSED_HEADER])
+        self.header = bytearray(byteStream[:HEADER_SIZE])
+        self.payload = byteStream[UNCOMPRESSED_HEADER:]
+
     def extendedEncode(self, version, padding, extension, cc,
-               seqnum, marker, pt, ssrc, payload,
-               extendedSeq, length, field, lineNo,
+               seqnum, marker, pt, ssrc, timestamp, payload,
+               length, field, lineNo,
                cont, offset):
+        seq , extendedSeq = seqnum & 65535, (seqnum >> 16) & 65535
         self.encode(version, padding, extension, cc,
-               seqnum, marker, pt, ssrc, payload)
-        self.extendedHeader[:HEADER_SIZE ] = self.header[:]
-        self.extendedHeader[12] = (extendedSeq >> 8) & 255 #upper bits
-        self.extendedHeader[13] = (extendedSeq & 255)
-        self.pattern[0] = (length >> 8) & 255
-        self.pattern[1] = length & 255
-        self.pattern[2] = (field << 7) | (lineNo >> 8) & 255
-        self.pattern[3] = lineNo & 255
-        self.pattern[4] = (cont << 7) | (offset >> 8) & 255
-        self.pattern[5] = offset & 255
-        self.extendedHeader[14: 20] = self.pattern[:]
-        self.extendedHeader[20: 26] = self.pattern[:]
+               seq, marker, pt, ssrc, timestamp, payload)
+        extendedHeader = bytearray(UNCOMPRESSED_HEADER)
+        pattern = bytearray(6)
+        extendedHeader[:HEADER_SIZE] = self.header[:]
+        extendedHeader[12] = (extendedSeq >> 8) & 255 #upper bits
+        extendedHeader[13] = (extendedSeq & 255)
+        pattern[0] = (length >> 8) & 255
+        pattern[1] = length & 255
+        pattern[2] = (field << 7) | ((lineNo >> 8) & 127)
+        pattern[3] = lineNo & 255
+        pattern[4] = (cont << 7) | ((offset >> 8) & 127)
+        pattern[5] = offset & 255
+        extendedHeader[14: 20] = pattern[:]
+        extendedHeader[20: 26] = pattern[:]
+        self.extendedHeader = extendedHeader
 
         self.payload = payload
 
     def extendedSeq(self):
-         exseq = self.extendedHeader[12] << 8 | self.extendedHeader [13]
+         exseq = (self.extendedHeader[12] << 8) | self.extendedHeader[13]
+         seq = self.seqNum()
+         exseq = int((exseq << 16) | seq)
          return int(exseq)
 
     def length(self):
-        length = self.extendedHeader[14] << 8 | self.extendedHeader[15]
+        length = ((self.extendedHeader[14] & 127) << 8) | self.extendedHeader[15]
         return int(length)
 
     def field(self):
         return int(self.extendedHeader[16] >> 7)
 
     def lineNo(self):
-        lineNo = self.extendedHeader[16] << 8 | self.extendedHeader[17]
+        lineNo = ((self.extendedHeader[16] & 127) << 8) | self.extendedHeader[17]
         return int(lineNo)
 
     def continuation(self):
         return int(self.extendedHeader[18] >> 7)
 
     def offset(self):
-        offset = self.extendedHeader[18] <<8 | self.extendedHeader[19]
+        offset = ((self.extendedHeader[18] & 127) << 8) | self.extendedHeader[19]
         return int(offset)
 
+    def getPacket(self):
+        """Return RTP packet."""
+        return self.extendedHeader + self.payload
+    # def checkValid(self):
+    #     for i, j in (self.extendedHeader[14:20], self.extendedHeader[20: 26]):
+    #         if int(i) != int(j):
+    #             return False
+    #         return True
 
-    def checkValid(self):
-        for i, j in (self.extendedHeader[14:20], self.extendedHeader[20: 26]):
-            if int(i) != int(j):
-                return False
-            return True
+class SimpleRtpPacket:
+    def __init__(self):
+        self.frame = 0
+        self.payload = bytearray(0)

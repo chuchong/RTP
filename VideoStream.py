@@ -133,12 +133,12 @@ class Mp4Stream:
         #     return None
 
         # 动态调整图片大小
-        if self.frameNum % 10 == 0 and self.quality < 100:
-            self.quality += 10
+        # if self.frameNum % 10 == 0 and self.quality < 100:
+        #     self.quality += 10
 
         success , image = self.capture.read()
         if success:
-            print("sending images")
+            # print("sending images")
             self.frameNum += 1
             # imageBytes = cv2.imencode('.jpg', image)[1].tostring()
 

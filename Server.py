@@ -11,12 +11,15 @@ PACKET_DATA_SIZE = 256
 
 from VideoStream import *
 from Rtsp import *
+
 class Server:
 
     INIT = 0
     READY = 1
     PLAYING = 2
     PAUSE = 3
+
+    MAX_PAYLOAD_SIZE = 65509
 
     def __init__(self, connSocket, clientAddress):
         self.state = Server.INIT
@@ -28,6 +31,7 @@ class Server:
         self.event = threading.Event()
         self.rtpLock = threading.Lock()
         self.session = 0
+        self.seqnum = 0
 
     def run(self):
         self.recvRtspRequest()
@@ -162,35 +166,60 @@ class Server:
 
             data = self.videoStream.nextFrame()
             if data:
-                try:
-                    frameNum = self.videoStream.getFrameNum()
-                    port = self.rtpPort
-                    self.rtpSocket.sendto(self.makeRtp(data, frameNum),
-                                      (self.clientAddress[0],#accept 返回的address 是二元组
-                                       port))
-                    # time.sleep(0.05)
-                except:
-                    print('error happen')
-                    traceback.print_exc(file=sys.stdout)
+                marker = 0
+                timestamp = int(time.time())
+                frameNum = self.videoStream.getFrameNum()
+                remainSize = len(data)
+                offset = 0
+                while remainSize:
+                    if remainSize > self.MAX_PAYLOAD_SIZE // 4:
+                        length = self.MAX_PAYLOAD_SIZE // 4
+                    else:
+                        length = remainSize
+                        marker = 1
+
+                    remainSize -= length
+                    payload = data[int(offset): int(offset) + int(length)]
+
+                    try:
+                        port = self.rtpPort
+                        self.rtpSocket.sendto(self.makeRtp(payload, frameNum, length, offset, timestamp, marker),
+                                          (self.clientAddress[0],#accept 返回的address 是二元组
+                                           port))
+                        # time.sleep(0.05)
+
+                        offset += length
+
+                    except:
+                        print('error happen')
+                        traceback.print_exc(file=sys.stdout)
         self.rtpLock.release()
 
-    def makeRtp(self, data, frameNum):
+    def makeRtp(self, data, frameNum, length, offset, timestamp, marker):
 
+        self.seqnum += 1
         version = 2
         padding = 0
         extension = 0
         cc = 0
-        marker = 0
+        marker = marker
         pt = 26  # MJPEG type
-        seqnum = frameNum
+        seqnum = self.seqnum
         ssrc = 0
+        timestamp = timestamp
+        length = length
+        field = 0
+        cont = 0
+        lineNo = int(frameNum)
+        offset = offset
 
-        rtpPacket = RtpPacket.RtpPacket()
+        rtpPacket = RtpPacket.UncompressedRtp()
 
-        rtpPacket.encode(version, padding, extension, cc, seqnum,
-                         marker, pt, ssrc,
-                         data)
-
+        rtpPacket.extendedEncode(version, padding, extension, cc, seqnum,
+                         marker, pt, ssrc, timestamp,
+                         data,
+                         length, field, lineNo, cont, offset)
+        print('frame{} seq{} length:{} offset:{} marker:{}'.format(lineNo, seqnum, length, offset, marker))
         return rtpPacket.getPacket()
 
 def newServer(connSocket, address):

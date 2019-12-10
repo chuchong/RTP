@@ -69,5 +69,12 @@ Line No.: 15 bits
      MAY be included in a single packet, up to the path MTU limit.  The
      only way to determine the number of scan lines included per packet
      is to parse the payload headers.
+     
+     The initial value of the timestamp SHOULD be random
+     
+     The offset has a value of zero if
+     the first sample in the payload corresponds to the start of the
+     line, and increments by one for each pixel.
+
 ```
 

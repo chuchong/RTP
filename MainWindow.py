@@ -10,17 +10,17 @@ import os
 import threading
 import queue
 import socket
-import time
+
 from PyQt5.QtWidgets import *
 from PyQt5.QtGui import *
 from PyQt5.QtCore import *
 from PyQt5.QtCore import QTimer
 from clientUI import Ui_MainWindow
-from RtpPacket import RtpPacket
+from RtpPacket import *
 from Rtsp import *
 from FullScreenWindows import FullScreenWindow
 from signal import RtpSignals
-
+import time
 #用于显示bug,只放在最顶层的函数上
 CACHE_FILE_EXT = ".jpg"
 
@@ -217,6 +217,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
     @qt_exception_wrapper
     def exitClient(self):
         """Teardown button handler."""
+
         # 不用考虑同步,关了就行
         try:
             self.requestSent = METHOD.TEARDOWN
@@ -273,21 +274,73 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         # playLoop全局只有一个保证了refreshLock不会死锁
         self.playLock.release()
 
+    def pushFrameRtp(self, frame, rtpPackets):
+        """用于产生之后绘图使用的packet"""
+        print("cope with frame: {}".format(frame))
+        if frame > self.frame_pos:  # Discard the late packet
+            rtpPacket = SimpleRtpPacket()
+            rtpPacket.frame = frame
+            for packet in rtpPackets:
+                rtpPacket.payload += packet.getPayload()
+            self.bufferQueue.put(rtpPacket)
+
+
     def listenRtp(self):
         """Listen for RTP packets."""
         self.rtpLock.acquire()
+        lastFrameNbr = 0
+        lastSeqnum = 0
+        isComplete = True
+        rtpPackets = []
+        accumOffset = 0
         while True:
-            # print('listen')
+            print('listen')
+
             try:
-                data = self.rtpSocket.recv(65535)
+                data = self.rtpSocket.recv(65536)
                 if data:
-                    rtpPacket = RtpPacket()
-                    rtpPacket.decode(data)
+                    rtpPacket = UncompressedRtp()
+                    rtpPacket.extendDecode(data)
 
-                    currFrameNbr = rtpPacket.seqNum()
+                    seqnum = rtpPacket.extendedSeq()
+                    frameNbr = rtpPacket.lineNo()
+                    timestamp = rtpPacket.timestamp()
+                    length = rtpPacket.length()
+                    offset = rtpPacket.offset()
+                    marker = rtpPacket.marker()
 
-                    if currFrameNbr > self.frame_pos:  # Discard the late packet
-                        self.bufferQueue.put(rtpPacket)
+                    print('{} {} {} {} {}'.format(seqnum, frameNbr, length, offset, marker))
+                    # 正常情况,连续一帧的分包
+                    if lastFrameNbr == frameNbr and isComplete:
+                        if seqnum != lastSeqnum + 1 or offset != accumOffset:
+                            isComplete = False
+                            rtpPackets.clear()
+                        else:
+                            rtpPackets.append(rtpPacket)
+                            accumOffset += length
+
+                        if marker == 1:
+                            """marker = 1 代表一帧结束"""
+                            self.pushFrameRtp(lastFrameNbr, rtpPackets)
+
+                    # 新的一帧的开始
+                    if lastFrameNbr != frameNbr:
+                        if offset == 0:
+                            lastFrameNbr = frameNbr
+                            isComplete = True
+                            rtpPackets = []
+                            accumOffset = 0
+
+                            rtpPackets.append(rtpPacket)
+                            accumOffset += length
+
+                            if marker == 1:
+                                """marker = 1 代表一帧结束"""
+                                self.pushFrameRtp(lastFrameNbr, rtpPackets)
+
+                    lastSeqnum = seqnum
+                    # if seqnum > self.frame_pos:  # Discard the late packet
+                    #     self.bufferQueue.put(rtpPacket)
             except:
                 if self.teardownAcked == 1:
                     self.rtpSocket.shutdown(socket.SHUT_RDWR)
@@ -310,6 +363,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.refreshLock.acquire()
 
         while True:
+            # print('REFRESH')
             stime = time.time()
             try:
                 if self.playEvent.isSet():
@@ -317,9 +371,12 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
                 if self.teardownAcked == 1:
                     break
+
+                if self.bufferQueue.empty():
+                    continue
                 rtpPacket = self.bufferQueue.get()
-                self.frame_pos = rtpPacket.seqNum()
-                self.updateMovie(rtpPacket.getPayload())
+                self.frame_pos = rtpPacket.frame
+                self.updateMovie(rtpPacket.payload)
             except Exception as e:
                 #TODO rtcp可调整
                 print(e)
