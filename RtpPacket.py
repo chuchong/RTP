@@ -1,7 +1,7 @@
 import sys
 from time import time
 HEADER_SIZE = 12
-
+UNCOMPRESSED_HEADER = 26
 class RtpPacket:    
     header = bytearray(HEADER_SIZE)
     
@@ -63,3 +63,61 @@ class RtpPacket:
     def getPacket(self):
         """Return RTP packet."""
         return self.header + self.payload
+
+
+class UncompressedRtp(RtpPacket):
+    """uncompressed video rtp"""
+    """https://tools.ietf.org/html/rfc4175"""
+    extendedHeader = bytearray(UNCOMPRESSED_HEADER)
+
+    def __init__(self):
+        super(UncompressedRtp, self).__init__()
+        self.pattern = bytearray(6)
+    def extendedEncode(self, version, padding, extension, cc,
+               seqnum, marker, pt, ssrc, payload,
+               extendedSeq, length, field, lineNo,
+               cont, offset):
+        self.encode(version, padding, extension, cc,
+               seqnum, marker, pt, ssrc, payload)
+        self.extendedHeader[:HEADER_SIZE ] = self.header[:]
+        self.extendedHeader[12] = (extendedSeq >> 8) & 255 #upper bits
+        self.extendedHeader[13] = (extendedSeq & 255)
+        self.pattern[0] = (length >> 8) & 255
+        self.pattern[1] = length & 255
+        self.pattern[2] = (field << 7) | (lineNo >> 8) & 255
+        self.pattern[3] = lineNo & 255
+        self.pattern[4] = (cont << 7) | (offset >> 8) & 255
+        self.pattern[5] = offset & 255
+        self.extendedHeader[14: 20] = self.pattern[:]
+        self.extendedHeader[20: 26] = self.pattern[:]
+
+        self.payload = payload
+
+    def extendedSeq(self):
+         exseq = self.extendedHeader[12] << 8 | self.extendedHeader [13]
+         return int(exseq)
+
+    def length(self):
+        length = self.extendedHeader[14] << 8 | self.extendedHeader[15]
+        return int(length)
+
+    def field(self):
+        return int(self.extendedHeader[16] >> 7)
+
+    def lineNo(self):
+        lineNo = self.extendedHeader[16] << 8 | self.extendedHeader[17]
+        return int(lineNo)
+
+    def continuation(self):
+        return int(self.extendedHeader[18] >> 7)
+
+    def offset(self):
+        offset = self.extendedHeader[18] <<8 | self.extendedHeader[19]
+        return int(offset)
+
+
+    def checkValid(self):
+        for i, j in (self.extendedHeader[14:20], self.extendedHeader[20: 26]):
+            if int(i) != int(j):
+                return False
+            return True
