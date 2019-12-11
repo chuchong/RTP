@@ -33,6 +33,10 @@ class Server:
         self.session = 0
         self.seqnum = 0
 
+        # rtcp可以控制的地方
+        self.sleepTime = 0.01
+        self.quality = 20
+
     def run(self):
         self.recvRtspRequest()
 
@@ -159,7 +163,6 @@ class Server:
         thresold = 10
 
         while True:
-            # self.time.wait(0.1)
             if self.event.isSet():
                 print("set event")
                 break
@@ -168,6 +171,7 @@ class Server:
             if data:
                 marker = 0
                 timestamp = int(time.time())
+                self.videoStream.quality = self.quality
                 frameNum = self.videoStream.getFrameNum()
                 remainSize = len(data)
                 lenOffset = 0
@@ -187,7 +191,7 @@ class Server:
                         self.rtpSocket.sendto(self.makeRtp(payload, frameNum, length, offset, timestamp, marker),
                                           (self.clientAddress[0],#accept 返回的address 是二元组
                                            port))
-                        time.sleep(0.015)
+                        time.sleep(self.sleepTime)
 
                         lenOffset += length
                         offset += 1

@@ -5,12 +5,14 @@ class VideoStream:
     """mjpeg/mjpg格式用的stream"""
     def __init__(self, filename):
         self.filename = filename
+        self.frameNum = 0
         try:
             self.file = open(filename, 'rb')
         except Exception:
             print('cannot read', filename)
             raise IOError
         self.frameCnt = self._getFrameCnt()
+        print("total cnt {}".format(self.frameCnt))
         self.frameNum = 0
 
     def _getFrameCnt(self):
@@ -27,7 +29,7 @@ class VideoStream:
                 break
 
         self.file.seek(0)
-        return len(self.frameSets)
+        return self.frameNum
 
     def getFrameCnt(self):
         return self.frameCnt
@@ -41,7 +43,6 @@ class VideoStream:
         for i in range(size):
             dec = dec + (10 ** (size - 1 - i)) * (byteArr[i] - zero)
 
-        print(dec)
         return dec
 
     def _nextFrame(self):
@@ -60,12 +61,13 @@ class VideoStream:
             self.frameNum = self.frameNum + 1
 
             return frame, frameLength
+        return None, None
 
     def setCurFrame(self, frame):
         self.frameNum = frame
 
     def nextFrame(self):
-        frame, _ = self._nextFrame()
+        frame, a = self._nextFrame()
         return frame
 
     def getFrameNum(self):
@@ -122,7 +124,7 @@ class Mp4Stream:
         self.fps = self.capture.get(cv2.CAP_PROP_FPS)
         self.frameCnt = self.capture.get(cv2.CAP_PROP_FRAME_COUNT)
         self.totalTime = self.frameCnt / self.fps
-        self.quality = 50
+        self.quality = 10
 
     def setCurFrame(self, frame):
         self.capture.set(cv2.CAP_PROP_POS_FRAMES, frame)
@@ -147,7 +149,7 @@ class Mp4Stream:
                 imageBytes = cv2.imencode('.jpg', image, q)[1].tobytes()
                 if len(imageBytes) < 65535 * 8:
                     break
-                self.quality -= 10
+                    # self.quality -= 10
             return imageBytes
 
         return None

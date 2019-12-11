@@ -188,15 +188,19 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         if self.state != self.INIT:
             if self.state == self.PLAYING:
                 self.pauseMovie()
+            self.bufferQueue = queue.Queue()
+            self.packetsQueue = queue.Queue()
             value = self.curSlider.value()
             if value != self.preSliderValue:
                 ratio = value / self.SLIDER_SIZE
 
                 self.frame_pos = int(ratio * self.frame_cnt)
+
                 assert(Rtsp.params[PARAM.FRAME_POS]=='frame_pos')#由于kwargs没有那么智能,只能这样了
                 self.requestSent = METHOD.SET_PARAMETER
                 self.sendRequest(frame_pos=self.frame_pos)
                 # 重新播放
+
                 self.state = self.READY
                 self.playMovie()
 
@@ -215,6 +219,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             fps = Rtsp.getParamFromEnum(PARAM.FPS)
             self.sendRequest(frame_cnt, fps)
             self.frame_cnt = float(self.params[Rtsp.getParamFromEnum(PARAM.FRAME_CNT)])
+            if self.frame_cnt == 0:
+                self.slider.setEnabled(False)
             self.basicFps = int(float(self.params[fps]))
             self.changeSpeed(self.speed)
 
@@ -275,8 +281,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.refreshLock.acquire()
         self.rtpLock.acquire()
         # 当两个都结束时,析构一些变量
-        self.bufferQueue = queue.Queue()
-        self.packetsQueue = queue.Queue()
+        # self.bufferQueue = queue.Queue()
+        # self.packetsQueue = queue.Queue()
         self.refreshLock.release()
         self.rtpLock.release()
         # playLoop全局只有一个保证了refreshLock不会死锁
@@ -328,7 +334,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
                 if marker == 1:
                     """marker = 1 代表一帧结束"""
-                    print("********push frame {}".format(lastFrameNbr))
+                    print("++++++++++push frame {}".format(lastFrameNbr))
                     self.pushFrameRtp(frameNbr, rtpPackets)
 
             # 新的一帧的开始
@@ -347,7 +353,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
                 if marker == 1:
                     """marker = 1 代表一帧结束"""
-                    print("********push frame {}".format(lastFrameNbr))
+                    print("++++++++push frame {}".format(lastFrameNbr))
                     self.pushFrameRtp(frameNbr, rtpPackets)
 
             lastSeqnum = seqnum
@@ -377,6 +383,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                     frameNbr = rtpPacket.lineNo()
                     # print('seqnum {}'.format(seqnum))
                     if frameNbr >= self.frame_pos:
+                        print('push {}'.format(frameNbr))
                         self.packetsQueue .put(rtpPacket)
                     # print('{} {} {} {} {}'.format(seqnum, frameNbr, length, offset, marker))
                     # 正常情况,连续一帧的分包
@@ -421,6 +428,9 @@ class MainWindow(QMainWindow, Ui_MainWindow):
     @qt_exception_wrapper
     def refreshSlider(self):
         if self.state != self.INIT:
+            if self.frame_cnt == 0:
+                # self.slider.setEnabled(False)
+                return
             ratio = float(self.frame_pos) / float(self.frame_cnt)
             pos = int(ratio * self.SLIDER_SIZE)
             self.slider.setValue(pos)
