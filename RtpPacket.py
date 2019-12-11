@@ -74,7 +74,7 @@ class UncompressedRtp(RtpPacket):
     """对于progressive 的frame串,时间戳一样"""
     """但是seq在变大"""
     """consecutive中f 和 c都为0(intrlaced的f会交错"""
-    """offset是多少像素,我这里jpg截图分割成多个packet也不清楚,干脆表示length的累计和"""
+    """offset是多少像素,我这里jpg截图分割成多个packet也不清楚,干脆表示seqnum的偏移"""
     """lineNo 是一样的,我在这里就假定为frame的偏移量"""
     """length 当前包中数据量 按照4字节算"""
     """"""

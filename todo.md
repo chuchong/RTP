@@ -3,7 +3,8 @@ TODO:
 1. ~~reposition~~
 2. ~~change of play speed~~
 3. report
-4. 分包
+4. ~~分包~~
+   1. 改进client策略
 5. ~~full screen~~
 6. search video (using http)
 7. 实现音频 pydub

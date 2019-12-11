@@ -75,6 +75,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
         # 用以显示的多线程量
         self.bufferQueue = queue.Queue() # 多线程显示缓存的列表
+        self.packetsQueue = queue.Queue()
         self.rtsp = Rtsp()
         self.params = {}
         self.playEvent = threading.Event()
@@ -262,6 +263,9 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         t = threading.Thread(target=self.refreshFrame)
         t.setDaemon(True)  # 后台线程号结束
         t.start()
+        t = threading.Thread(target=self.packetization)
+        t.setDaemon(True)
+        t.start()
         t = threading.Thread(target=self.listenRtp)
         t.setDaemon(True)
         t.start()
@@ -269,6 +273,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.rtpLock.acquire()
         # 当两个都结束时,析构一些变量
         self.bufferQueue = queue.Queue()
+        self.packetsQueue = queue.Queue()
         self.refreshLock.release()
         self.rtpLock.release()
         # playLoop全局只有一个保证了refreshLock不会死锁
@@ -284,6 +289,69 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 rtpPacket.payload += packet.getPayload()
             self.bufferQueue.put(rtpPacket)
 
+    def packetization(self):
+        """用于将udp裸包处理成可以被视频用的包"""
+        firstFlag = False
+        lastFrameNbr = 0
+        isComplete = True
+        rtpPackets = []
+        accumOffset = 0
+        lastSeqnum = 0
+        while True:
+            if self.packetsQueue.empty():
+                continue
+            rtpPacket = self.packetsQueue.get()
+            seqnum = rtpPacket.extendedSeq()
+            frameNbr = rtpPacket.lineNo()
+            timestamp = rtpPacket.timestamp()
+            length = rtpPacket.length()
+            offset = rtpPacket.offset()
+            marker = rtpPacket.marker()
+
+
+            # if firstFlag:
+            #     lastFrameNbr = frameNbr
+            #     firstFlag = False
+
+            #正常情况,连续一帧的分包
+            if lastFrameNbr == frameNbr and isComplete:
+                if seqnum != lastSeqnum + 1:
+                    isComplete = False
+                    rtpPackets.clear()
+                else:
+                    rtpPackets.append(rtpPacket)
+                    accumOffset += length
+
+                if marker == 1:
+                    """marker = 1 代表一帧结束"""
+                    print("********push frame {}".format(lastFrameNbr))
+                    self.pushFrameRtp(frameNbr, rtpPackets)
+
+            # 新的一帧的开始
+            if lastFrameNbr != frameNbr:
+                if offset == 0:
+                    lastFrameNbr = frameNbr
+                    isComplete = True
+                    rtpPackets = []
+                    accumOffset = 0
+
+                    rtpPackets.append(rtpPacket)
+                    accumOffset += length
+                else:
+                    isComplete = False
+                    rtpPackets.clear()
+
+                if marker == 1:
+                    """marker = 1 代表一帧结束"""
+                    print("********push frame {}".format(lastFrameNbr))
+                    self.pushFrameRtp(frameNbr, rtpPackets)
+
+            lastSeqnum = seqnum
+
+            if self.playEvent.isSet():
+                break
+            # if seqnum > self.frame_pos:  # Discard the late packet
+            #     self.bufferQueue.put(rtpPacket)
 
     def listenRtp(self):
         """Listen for RTP packets."""
@@ -294,51 +362,48 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         rtpPackets = []
         accumOffset = 0
         while True:
-            print('listen')
+            # print('listen')
 
             try:
                 data = self.rtpSocket.recv(65536)
                 if data:
                     rtpPacket = UncompressedRtp()
                     rtpPacket.extendDecode(data)
-
                     seqnum = rtpPacket.extendedSeq()
                     frameNbr = rtpPacket.lineNo()
-                    timestamp = rtpPacket.timestamp()
-                    length = rtpPacket.length()
-                    offset = rtpPacket.offset()
-                    marker = rtpPacket.marker()
-
-                    print('{} {} {} {} {}'.format(seqnum, frameNbr, length, offset, marker))
+                    print('seqnum {}'.format(seqnum))
+                    if frameNbr >= self.frame_pos:
+                        self.packetsQueue .put(rtpPacket)
+                    # print('{} {} {} {} {}'.format(seqnum, frameNbr, length, offset, marker))
                     # 正常情况,连续一帧的分包
-                    if lastFrameNbr == frameNbr and isComplete:
-                        if seqnum != lastSeqnum + 1 or offset != accumOffset:
-                            isComplete = False
-                            rtpPackets.clear()
-                        else:
-                            rtpPackets.append(rtpPacket)
-                            accumOffset += length
-
-                        if marker == 1:
-                            """marker = 1 代表一帧结束"""
-                            self.pushFrameRtp(lastFrameNbr, rtpPackets)
-
-                    # 新的一帧的开始
-                    if lastFrameNbr != frameNbr:
-                        if offset == 0:
-                            lastFrameNbr = frameNbr
-                            isComplete = True
-                            rtpPackets = []
-                            accumOffset = 0
-
-                            rtpPackets.append(rtpPacket)
-                            accumOffset += length
-
-                            if marker == 1:
-                                """marker = 1 代表一帧结束"""
-                                self.pushFrameRtp(lastFrameNbr, rtpPackets)
-
-                    lastSeqnum = seqnum
+                    # if lastFrameNbr == frameNbr and isComplete:
+                    #     if seqnum != lastSeqnum + 1 or offset != accumOffset:
+                    #         isComplete = False
+                    #         rtpPackets.clear()
+                    #     else:
+                    #         rtpPackets.append(rtpPacket)
+                    #         accumOffset += length
+                    #
+                    #     if marker == 1:
+                    #         """marker = 1 代表一帧结束"""
+                    #         self.pushFrameRtp(lastFrameNbr, rtpPackets)
+                    #
+                    # # 新的一帧的开始
+                    # if lastFrameNbr != frameNbr:
+                    #     if offset == 0:
+                    #         lastFrameNbr = frameNbr
+                    #         isComplete = True
+                    #         rtpPackets = []
+                    #         accumOffset = 0
+                    #
+                    #         rtpPackets.append(rtpPacket)
+                    #         accumOffset += length
+                    #
+                    #         if marker == 1:
+                    #             """marker = 1 代表一帧结束"""
+                    #             self.pushFrameRtp(lastFrameNbr, rtpPackets)
+                    #
+                    # lastSeqnum = seqnum
                     # if seqnum > self.frame_pos:  # Discard the late packet
                     #     self.bufferQueue.put(rtpPacket)
             except:

@@ -19,7 +19,7 @@ class Server:
     PLAYING = 2
     PAUSE = 3
 
-    MAX_PAYLOAD_SIZE = 65509
+    MAX_PAYLOAD_SIZE = 60000 # 少弄些防止出问题
 
     def __init__(self, connSocket, clientAddress):
         self.state = Server.INIT
@@ -159,7 +159,7 @@ class Server:
         thresold = 10
 
         while True:
-            # self.event.wait(0.0166)
+            # self.time.wait(0.1)
             if self.event.isSet():
                 print("set event")
                 break
@@ -170,6 +170,7 @@ class Server:
                 timestamp = int(time.time())
                 frameNum = self.videoStream.getFrameNum()
                 remainSize = len(data)
+                lenOffset = 0
                 offset = 0
                 while remainSize:
                     if remainSize > self.MAX_PAYLOAD_SIZE // 4:
@@ -179,17 +180,17 @@ class Server:
                         marker = 1
 
                     remainSize -= length
-                    payload = data[int(offset): int(offset) + int(length)]
+                    payload = data[int(lenOffset): int(lenOffset) + int(length)]
 
                     try:
                         port = self.rtpPort
                         self.rtpSocket.sendto(self.makeRtp(payload, frameNum, length, offset, timestamp, marker),
                                           (self.clientAddress[0],#accept 返回的address 是二元组
                                            port))
-                        # time.sleep(0.05)
+                        time.sleep(0.015)
 
-                        offset += length
-
+                        lenOffset += length
+                        offset += 1
                     except:
                         print('error happen')
                         traceback.print_exc(file=sys.stdout)
