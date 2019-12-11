@@ -16,14 +16,15 @@ class PARAM(enum.Enum):
     FRAME_CNT = 0 # 总的帧数
     FRAME_POS = 1 # 当前帧
     FPS = 2
-
+    QUALITY = 3
 
 class Rtsp:
     """产生rtsp通讯字符串"""
     params = {
         PARAM.FRAME_CNT:'frame_cnt',
         PARAM.FRAME_POS: 'frame_pos',
-        PARAM.FPS: 'fps'}
+        PARAM.FPS: 'fps',
+        PARAM.QUALITY: 'quality'}
     methods = ['SETUP', 'PLAY', 'PAUSE',
                'TEARDOWN', 'GET_PARAMETER', 'SET_PARAMETER']
     rtspVersion = 'RTSP/1.0'

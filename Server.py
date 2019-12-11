@@ -35,7 +35,7 @@ class Server:
 
         # rtcp可以控制的地方
         self.sleepTime = 0.01
-        self.quality = 0
+        self.quality = 30
 
     def run(self):
         self.recvRtspRequest()
@@ -106,6 +106,8 @@ class Server:
             self.params[key] = params[key]
             if key == Rtsp.params[PARAM.FRAME_POS]:
                 self.videoStream.setCurFrame(int(self.params[key]))
+            if key == Rtsp.params[PARAM.QUALITY]:
+                self.quality = int(self.params[key])
             paramList.append(key)
         message = self.rtsp.respond(200, seq, self.session, args=paramList)
         return message

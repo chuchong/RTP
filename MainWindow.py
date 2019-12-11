@@ -44,6 +44,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
     SMALL_SCREEN = 1
 
     SLIDER_SIZE = 255
+    DEFAULT_QUALITY = 20
 
     def __init__(self, serveraddr, serverport, rtpport, filename):
         super().__init__()
@@ -98,6 +99,10 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.fullScreen.clicked.connect(self.switchDisplay)
         self.timer.timeout.connect(self.refreshSlider)
         self.speedBox.currentIndexChanged.connect(self.changeSpeedBox)
+
+        self.qualityEdit.setValidator(QIntValidator(1, 100))
+        self.quality = self.DEFAULT_QUALITY
+        self.setQualityB.clicked.connect(self.setQuality)
 
         self.labelWidth = self.label.width()
         self.labelHeight = self.label.height()
@@ -163,6 +168,41 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                                     self.sessionId, *args, **kwargs)
         self.rtspSocket.send(message.encode())
         self.recvRtspReply()
+
+    def setQuality(self):
+        quality = int(self.qualityEdit.text())
+        if self.quality == quality:
+            QMessageBox.information(self, '提示', '您当前quality已经是{}'.format(quality),
+                                 QMessageBox.Ok)
+        else:
+            if quality > 40:
+                select = QMessageBox.question(self, '警告', '您设置的视频质量过高,可能引起严重的失帧,卡顿,您还继续吗?',
+                                     QMessageBox.Ok | QMessageBox.No)
+                if select == QMessageBox.Ok:
+                    pass
+                else:
+                    return
+            QMessageBox.information(self, '提示', '选好了 quality为{}'.format(quality),
+                                 QMessageBox.Ok)
+            self.quality = quality
+
+            dirtyFlag = False  # 脏标记表示是否已经暂停了
+            if self.state == self.READY:
+                dirtyFlag = True
+            if self.state != self.INIT:
+                if self.state == self.PLAYING:
+                    self.pauseMovie()
+                self.bufferQueue = queue.Queue()
+                self.packetsQueue = queue.Queue()
+
+                self.requestSent = METHOD.SET_PARAMETER
+                self.sendRequest(frame_pos=self.frame_pos, quality=quality)
+
+                self.state = self.READY
+                self.playMovie()
+
+                if dirtyFlag:
+                    self.pauseMovie()
 
     def changeSpeed(self, speed):
         self.fps = int(self.basicFps * speed)
