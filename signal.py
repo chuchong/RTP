@@ -3,6 +3,8 @@ from PyQt5.QtCore import *
 class RtpSignals(QThread):
     AnimeSignal = pyqtSignal()
     ReAnimeSignal = pyqtSignal()
+    LoadSignal = pyqtSignal()
+    LoadDoneSignal = pyqtSignal()
 
     def __init__(self, fullScrennWindow):
         super(RtpSignals, self).__init__()

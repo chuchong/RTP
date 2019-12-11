@@ -49,6 +49,10 @@ class Ui_Form(object):
         self.label_2 = QtWidgets.QLabel(self.widget)
         self.label_2.setGeometry(QtCore.QRect(845, 40, 60, 16))
         self.label_2.setObjectName("label_2")
+        self.loadingLabel = QtWidgets.QLabel(Form)
+        self.loadingLabel.setGeometry(QtCore.QRect(640, 450, 40, 40))
+        self.loadingLabel.setText("")
+        self.loadingLabel.setObjectName("loadingLabel")
 
         self.retranslateUi(Form)
         QtCore.QMetaObject.connectSlotsByName(Form)

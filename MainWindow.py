@@ -79,8 +79,10 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.rtsp = Rtsp()
         self.params = {}
         self.playEvent = threading.Event()
+        self.waitEvent = threading.Event()
         self.playLock = threading.Lock()
         self.rtpLock = threading.Lock()
+        self.packetLock = threading.Lock()
         self.refreshLock = threading.Lock()
         self.timer = QTimer(self)
 
@@ -106,7 +108,12 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.sonWidget.pause.clicked.connect(self.pauseMovie)
         self.sonWidget.exit.clicked.connect(self.switchDisplay)
         self.sonWidget.comboBox.currentIndexChanged.connect(self.changeSpeedBox)
+        self.loadingLabel.setScaledContents(True)
+        self.sonWidget.loadingLabel.setScaledContents(True)
+        self.movie = QMovie("loading.gif")
+        self.loadingLabel.setMovie(self.movie)
 
+        self.sonWidget.loadingLabel.setMovie(self.movie)
 
 
         # 和子窗口的东西
@@ -117,6 +124,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.rtpSignals = RtpSignals(self.sonWidget)
         self.rtpSignals.AnimeSignal.connect(self.sonAnime)
         self.rtpSignals.ReAnimeSignal.connect(self.sonReAnime)
+        self.rtpSignals.LoadSignal.connect(self.loading)
+        self.rtpSignals.LoadDoneSignal.connect(self.loadingDone)
         self.sonLock=threading.Lock()
 
     def onSendAnime(self):
@@ -143,6 +152,16 @@ class MainWindow(QMainWindow, Ui_MainWindow):
     def changeSpeed(self, speed):
         self.fps = int(self.basicFps * speed)
         self.cycle = 1 / self.fps
+
+    def loading(self):
+        print("XXXXXXXXXXXXXXXXXXXXXXXloadingXXXXXXXXXXXXXXXXXXXXXXx")
+        self.loadingLabel.show()
+        self.sonWidget.loadingLabel.show()
+        self.movie.start()
+
+    def loadingDone(self):
+        self.loadingLabel.hide()
+        self.sonWidget.loadingLabel.hide()
 
     @qt_exception_wrapper
     def switchDisplay(self):
@@ -280,9 +299,11 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         t.start()
         self.refreshLock.acquire()
         self.rtpLock.acquire()
+        self.packetLock.acquire()
         # 当两个都结束时,析构一些变量
         # self.bufferQueue = queue.Queue()
         # self.packetsQueue = queue.Queue()
+        self.packetLock.release()
         self.refreshLock.release()
         self.rtpLock.release()
         # playLoop全局只有一个保证了refreshLock不会死锁
@@ -300,6 +321,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
     def packetization(self):
         """用于将udp裸包处理成可以被视频用的包"""
+        self.packetLock.acquire()
         firstFlag = False
         lastFrameNbr = 0
         isComplete = True
@@ -360,6 +382,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
             if self.playEvent.isSet():
                 break
+
+        self.packetLock.release()
             # if seqnum > self.frame_pos:  # Discard the late packet
             #     self.bufferQueue.put(rtpPacket)
 
@@ -371,6 +395,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         isComplete = True
         rtpPackets = []
         accumOffset = 0
+        self.seqnum = 0
         while True:
             # print('listen')
 
@@ -382,41 +407,11 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                     seqnum = rtpPacket.extendedSeq()
                     frameNbr = rtpPacket.lineNo()
                     # print('seqnum {}'.format(seqnum))
-                    if frameNbr >= self.frame_pos:
+                    if seqnum >= self.seqnum:
+                        self.seqnum = seqnum
                         print('push {}'.format(frameNbr))
                         self.packetsQueue .put(rtpPacket)
-                    # print('{} {} {} {} {}'.format(seqnum, frameNbr, length, offset, marker))
-                    # 正常情况,连续一帧的分包
-                    # if lastFrameNbr == frameNbr and isComplete:
-                    #     if seqnum != lastSeqnum + 1 or offset != accumOffset:
-                    #         isComplete = False
-                    #         rtpPackets.clear()
-                    #     else:
-                    #         rtpPackets.append(rtpPacket)
-                    #         accumOffset += length
-                    #
-                    #     if marker == 1:
-                    #         """marker = 1 代表一帧结束"""
-                    #         self.pushFrameRtp(lastFrameNbr, rtpPackets)
-                    #
-                    # # 新的一帧的开始
-                    # if lastFrameNbr != frameNbr:
-                    #     if offset == 0:
-                    #         lastFrameNbr = frameNbr
-                    #         isComplete = True
-                    #         rtpPackets = []
-                    #         accumOffset = 0
-                    #
-                    #         rtpPackets.append(rtpPacket)
-                    #         accumOffset += length
-                    #
-                    #         if marker == 1:
-                    #             """marker = 1 代表一帧结束"""
-                    #             self.pushFrameRtp(lastFrameNbr, rtpPackets)
-                    #
-                    # lastSeqnum = seqnum
-                    # if seqnum > self.frame_pos:  # Discard the late packet
-                    #     self.bufferQueue.put(rtpPacket)
+
             except:
                 if self.teardownAcked == 1:
                     self.rtpSocket.shutdown(socket.SHUT_RDWR)
@@ -452,6 +447,10 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                     break
 
                 if self.bufferQueue.empty():
+                    # 这代表了卡
+                    self.rtpSignals.LoadSignal.emit()
+                    QThread.msleep(1000)
+                    self.rtpSignals.LoadDoneSignal.emit()
                     continue
                 rtpPacket = self.bufferQueue.get()
                 self.frame_pos = rtpPacket.frame
@@ -464,6 +463,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             if deltaTime < self.cycle:
                 time.sleep(self.cycle - deltaTime)
             else:
+                ## 等待一段时间
                 pass# TODO 用rtcp调整
         self.refreshLock.release()
 
