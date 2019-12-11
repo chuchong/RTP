@@ -35,7 +35,7 @@ class Server:
 
         # rtcp可以控制的地方
         self.sleepTime = 0.01
-        self.quality = 25
+        self.quality = 0
 
     def run(self):
         self.recvRtspRequest()

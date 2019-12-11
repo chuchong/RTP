@@ -6,6 +6,8 @@ class RtpSignals(QThread):
     LoadSignal = pyqtSignal()
     LoadDoneSignal = pyqtSignal()
 
+    VideoEndSignal = pyqtSignal()
+
     def __init__(self, fullScrennWindow):
         super(RtpSignals, self).__init__()
         self.full = fullScrennWindow

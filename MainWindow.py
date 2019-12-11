@@ -126,6 +126,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.rtpSignals.ReAnimeSignal.connect(self.sonReAnime)
         self.rtpSignals.LoadSignal.connect(self.loading)
         self.rtpSignals.LoadDoneSignal.connect(self.loadingDone)
+        self.rtpSignals.VideoEndSignal.connect(self.pauseMovie)
         self.sonLock=threading.Lock()
 
     def onSendAnime(self):
@@ -224,6 +225,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self.packetsQueue = queue.Queue()
             value = self.curSlider.value()
             if value != self.preSliderValue:
+                if value == self.SLIDER_SIZE:
+                    value -= 1
                 ratio = value / self.SLIDER_SIZE
 
                 self.frame_pos = int(ratio * self.frame_cnt)
@@ -464,9 +467,13 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
                 if self.bufferQueue.empty():
                     # 这代表了卡
-                    self.rtpSignals.LoadSignal.emit()
-                    QThread.msleep(1000)
-                    self.rtpSignals.LoadDoneSignal.emit()
+                    if self.frame_pos == self.frame_cnt:
+                        # 代表了放完了
+                        self.rtpSignals.VideoEndSignal.emit()
+                        # self.pauseMovie()
+                    # self.rtpSignals.LoadSignal.emit()
+                    # QThread.msleep(1000)
+                    # self.rtpSignals.LoadDoneSignal.emit()
                     continue
                 rtpPacket = self.bufferQueue.get()
                 self.frame_pos = rtpPacket.frame

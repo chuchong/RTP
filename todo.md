@@ -2,14 +2,15 @@ TODO:
 
 1. ~~reposition~~
 2. ~~change of play speed~~
-3. report
+3. ~~report~~
 4. ~~分包~~
-   1. 改进client策略
+   1. ~~改进client策略~~
 5. ~~full screen~~
-6. search video (using http)
-7. 实现音频 pydub
-8. rtcp
-9. 转ts
+6. 多种视频质量
+7. search video (using http)
+8. 实现音频 pydub
+9. rtcp
+10. 转ts
 
 RTSP
 
