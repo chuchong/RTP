@@ -127,6 +127,9 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.rtpSignals.LoadSignal.connect(self.loading)
         self.rtpSignals.LoadDoneSignal.connect(self.loadingDone)
         self.rtpSignals.VideoEndSignal.connect(self.pauseMovie)
+        self.rtpSignals.NeedBufferSignal.connect(self.buffering)
+
+        self.bufferLock = threading.Lock()
         self.sonLock=threading.Lock()
 
     def onSendAnime(self):
@@ -134,6 +137,17 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
     def onSendReAnime(self):
         self.rtpSignals.ReAnimeSignal.emit()
+
+    def buffering(self):
+        if self.bufferLock.acquire(blocking=False):
+            self.loading()
+            # QThread.msleep(1000)
+
+            QTimer.singleShot(1000, self.bufferOut)
+
+    def bufferOut(self):
+        self.rtpSignals.LoadDoneSignal.emit()
+        self.bufferLock.release()
 
     def sonAnime(self):
         self.sonLock.acquire()
@@ -156,11 +170,13 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
     def loading(self):
         print("XXXXXXXXXXXXXXXXXXXXXXXloadingXXXXXXXXXXXXXXXXXXXXXXx")
+        self.waitEvent.set()
         self.loadingLabel.show()
         self.sonWidget.loadingLabel.show()
         self.movie.start()
 
     def loadingDone(self):
+        self.waitEvent.clear()
         self.loadingLabel.hide()
         self.sonWidget.loadingLabel.hide()
 
@@ -471,6 +487,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                         # 代表了放完了
                         self.rtpSignals.VideoEndSignal.emit()
                         # self.pauseMovie()
+                    self.rtpSignals.NeedBufferSignal.emit()
                     # self.rtpSignals.LoadSignal.emit()
                     # QThread.msleep(1000)
                     # self.rtpSignals.LoadDoneSignal.emit()
