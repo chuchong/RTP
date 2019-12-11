@@ -1,18 +1,32 @@
 # -*- coding: utf-8 -*-
+# 主页面
 # import Client
 from tkinter import *
 from tkinter import Tk
 
-# from Client import Client
-#
-serverAddr = "127.0.0.1"
-serverPort = 8000
-rtpPort = 12450
-fileName = "Sekiro.mp4"
-# root = Tk()
-# client = Client(root, serverAddr, serverPort, rtpPort, fileName)
-# client.master.title('Client')
-# root.mainloop()
+try:
+    serverAddr = sys.argv[1]
+except:
+    serverAddr = "127.0.0.1"
+    print('serverAddr default to 127.0.0.1')
+
+try:
+    serverPort = sys.argv[2]
+except:
+    serverPort = 8000
+    print('serverPort default to 8000')
+
+try:
+    rtpPort = sys.argv[3]
+except:
+    rtpPort = 12451
+    print('rtpPort default to 12451')
+
+try:
+    fileName = sys.argv[4]
+except:
+    fileName = 'Sekiro.mp4'
+    print('folderName default to Sekiro.mp4')
 
 import sys
 from MainWindow import MainWindow

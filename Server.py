@@ -243,9 +243,8 @@ def main(port):
 
 if __name__ == '__main__':
     try:
-        # port = sys.argv[1]
-        # main(int(port))
-        port = 8000
-        main(port)
+        port = sys.argv[1]
     except:
-        raise Exception('argv incorrect')
+        print('no port input, default to 8000')
+        port = 8000
+    main(int(port))
