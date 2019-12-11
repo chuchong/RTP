@@ -20,7 +20,8 @@ from RtpPacket import *
 from Rtsp import *
 from FullScreenWindows import FullScreenWindow
 from signal import RtpSignals
-import time
+from RtcpPacket import *
+from time import time, sleep
 #用于显示bug,只放在最顶层的函数上
 CACHE_FILE_EXT = ".jpg"
 
@@ -83,6 +84,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.waitEvent = threading.Event()
         self.playLock = threading.Lock()
         self.rtpLock = threading.Lock()
+        self.rtcpLock = threading.Lock()
         self.packetLock = threading.Lock()
         self.refreshLock = threading.Lock()
         self.timer = QTimer(self)
@@ -361,22 +363,27 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         # 播放的主循环,主要要使用其来同步listen和refresh
         self.playLock.acquire()
         t = threading.Thread(target=self.refreshFrame)
-        t.setDaemon(True)  # 后台线程号结束
+
         t.start()
         t = threading.Thread(target=self.packetization)
-        t.setDaemon(True)
+
         t.start()
         t = threading.Thread(target=self.listenRtp)
-        t.setDaemon(True)
+
+        t.start()
+        t = threading.Thread(target=self.listenRtcp)
+
         t.start()
         self.refreshLock.acquire()
         self.rtpLock.acquire()
+        # self.rtcpLock.acquire()
         self.packetLock.acquire()
         # 当两个都结束时,析构一些变量
         # self.bufferQueue = queue.Queue()
         # self.packetsQueue = queue.Queue()
         self.packetLock.release()
         self.refreshLock.release()
+        # self.rtcpLock.release()
         self.rtpLock.release()
         # playLoop全局只有一个保证了refreshLock不会死锁
         self.playLock.release()
@@ -399,7 +406,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         isComplete = True
         rtpPackets = []
         accumOffset = 0
-        lastSeqnum = 0
+
         while True:
             if self.packetsQueue.empty():
                 continue
@@ -410,6 +417,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             length = rtpPacket.length()
             offset = rtpPacket.offset()
             marker = rtpPacket.marker()
+            self.ssrc = rtpPacket.ssrc()
 
 
             # if firstFlag:
@@ -459,6 +467,62 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             # if seqnum > self.frame_pos:  # Discard the late packet
             #     self.bufferQueue.put(rtpPacket)
 
+    def listenRtcp(self):
+        # self.rtcpLock.acquire()
+        self.jitter = 0
+        self.cumu_lost = 0
+        lastlastseq = 0
+        while True:
+            # print('listen')
+
+            try:
+                (data, address) = self.rtcpSocket.recvfrom(65536)
+                print("receive RTCP")
+                if data:
+                    rtcpPacket = SRRtcpPacket()
+                    rtcpPacket.decode(data)
+                    rc = rtcpPacket.rc()
+                    if rc == 203:
+                        # BYE
+                        break
+                    padding = rtcpPacket.padding()
+                    ssrc = rtcpPacket.sender_ssrc()
+                    ntpH, ntpL = rtcpPacket.ntpTime()
+                    rtp = rtcpPacket.rtpTime()
+                    packCnt= rtcpPacket.packCnt()
+                    octCnt = rtcpPacket.octCnt()
+
+
+                    lsr = (ntpH >> 16 & 65535) + ntpL << 16
+                    dlsr = int(time()) - ntpL
+                    self.jitter = int(dlsr*0.1 + 0.9*self.jitter)
+                    cumu_lost = self.lastSeqnum - self.startSeqnum - self.receivePackets
+                    frac_lost = int((cumu_lost - self.cumu_lost) / (self.lastSeqnum - lastlastseq) * 255)
+                    if frac_lost > 255:
+                        frac_lost = 255
+                    if frac_lost <0:
+                        frac_lost = 0
+                    lastlastseq = self.lastSeqnum
+                    self.cumu_lost = cumu_lost
+                    sendBackPacket = RRRtcpPacket()
+                    sendBackPacket.appendReportBlock(self.ssrc, frac_lost, self.cumu_lost,
+                                                     self.lastSeqnum, self.jitter, lsr, dlsr)
+                    sendBackPacket.encode(1, padding, 311, self.ssrc)
+
+
+                    # print('seqnum {}'.format(seqnum))
+                    # 收到后回答
+                    self.rtcpSocket.sendto(sendBackPacket.getPacket(), address)
+
+            except:
+                if self.teardownAcked == 1:
+                    self.rtcpSocket.shutdown(socket.SHUT_RDWR)
+                    self.rtcpSocket.close()
+
+                if self.playEvent.isSet():
+                    break
+        # self.rtcpLock.release()
+
     def listenRtp(self):
         """Listen for RTP packets."""
         self.rtpLock.acquire()
@@ -467,9 +531,11 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         isComplete = True
         rtpPackets = []
         accumOffset = 0
-        self.seqnum = 0
+        flag = True
+        self.startSeqnum = 0
+        self.lastSeqnum = 0
+        self.receivePackets = 0
         while True:
-            # print('listen')
 
             try:
                 data = self.rtpSocket.recv(65536)
@@ -478,13 +544,19 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                     rtpPacket.extendDecode(data)
                     seqnum = rtpPacket.extendedSeq()
                     frameNbr = rtpPacket.lineNo()
+                    if flag:
+                        flag = False
+                        self.lastSeqnum = seqnum
+                        self.startSeqnum = seqnum
                     # print('seqnum {}'.format(seqnum))
-                    if seqnum >= self.seqnum:
-                        self.seqnum = seqnum
-                        print('push {}'.format(frameNbr))
+                    if seqnum >= self.lastSeqnum:
+                        self.receivePackets += 1
+                        self.lastSeqnum = seqnum
+                        print('push {}'.format(seqnum))
                         self.packetsQueue .put(rtpPacket)
 
             except:
+                print('listen error')
                 if self.teardownAcked == 1:
                     self.rtpSocket.shutdown(socket.SHUT_RDWR)
                     self.rtpSocket.close()
@@ -510,7 +582,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
         while True:
             # print('REFRESH')
-            stime = time.time()
+            stime = time()
             try:
                 if self.playEvent.isSet():
                     break
@@ -538,10 +610,10 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             except Exception as e:
                 #TODO rtcp可调整
                 print(e)
-            etime = time.time()
+            etime = time()
             deltaTime = etime - stime
             if deltaTime < self.cycle:
-                time.sleep(self.cycle - deltaTime)
+                sleep(self.cycle - deltaTime)
             else:
                 ## 等待一段时间
                 pass# TODO 用rtcp调整
@@ -611,6 +683,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 self.state = self.READY
                 # Open RTP port.
                 self.openRtpPort()
+                self.openRtcpPort()
                 self.sessionId = session
             elif self.requestSent == METHOD.PLAY:
                 self.state = self.PLAYING
@@ -640,6 +713,18 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         try:
             # Bind the socket to the address using the RTP port given by the client user
             self.rtpSocket.bind((self.serverAddr, self.rtpPort))
+        except Exception as e:
+            QMessageBox.information(self, 'Error', 'Meet with Error: ' + str(e),
+                QMessageBox.Yes, QMessageBox.Yes)
+
+    def openRtcpPort(self):
+        self.rtcpSocket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        # Set the timeout value of the socket to 0.5sec
+        self.rtcpSocket.settimeout(0.5)
+
+        try:
+            # Bind the socket to the address using the RTP port given by the client user
+            self.rtcpSocket.bind((self.serverAddr, self.rtpPort + 1))
         except Exception as e:
             QMessageBox.information(self, 'Error', 'Meet with Error: ' + str(e),
                 QMessageBox.Yes, QMessageBox.Yes)

@@ -32,6 +32,12 @@ class RtpPacket:
         # Get the payload from the argument
         self.payload = payload
 
+    def ssrc(self):
+        return int(self.header[8] << 24 |
+                   self.header[9] << 16 |
+                   self.header[10] << 8 |
+                   self.header[11])
+
     def marker(self):
         return int(self.header[1] >> 7)
 

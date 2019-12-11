@@ -126,5 +126,6 @@ a = bytearray(10)
 # print(a[2:5])
 a += bytearray([12,12,12])
 b = bytearray(20)
-b[0:13] = a[:]
-print(a[:])
+a = a[0:4]
+a = int(a[0])
+print(a)

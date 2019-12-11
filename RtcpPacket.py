@@ -120,7 +120,7 @@ class SRRtcpPacket(RRRtcpPacket):
         self.report_blocks = bytearray(data[RTCP_HEADER + 20:])
 
     def exEncode(self, version, padding, length, ssrc, ntpTimeH, ntpTimeL, rtpTime, pack_cnt, oct_cnt,
-                 blocks):
+                 ):
         super().encode(version, padding,length, ssrc, 200)
         info = bytearray(20)
         info[0] = ntpTimeH >> 24 & 255

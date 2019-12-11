@@ -7,11 +7,12 @@ import threading
 import traceback
 import socket
 import RtpPacket
+from RtcpPacket import *
 PACKET_DATA_SIZE = 256
 
 from VideoStream import *
 from Rtsp import *
-
+from time import time, sleep
 class Server:
 
     INIT = 0
@@ -60,8 +61,9 @@ class Server:
         requestType, filename, seq, ports, session, params = self.rtsp.parseRequest(data)
 
         if requestType == METHOD.SETUP:
-            rtpPort = ports[0]
-            message = self.setup(filename, seq, rtpPort)
+            self.rtpPort = ports[0]
+            self.rtcpPort = int(ports[0])+1
+            message = self.setup(filename, seq, self.rtpPort)
         elif requestType == METHOD.PLAY:
             message = self.play(seq)
         elif requestType == METHOD.PAUSE:
@@ -128,17 +130,22 @@ class Server:
         if self.state == self.READY:
             self.state = self.PLAYING
             self.rtpSocket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            self.rtcpSocket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             # self.event = threading.Event()
             self.event.clear()
             self.worker = threading.Thread(target=self.sendRtp)
+            self.worker2 = threading.Thread(target=self.listenRtcp)
             self.worker.setDaemon(True)
             self.worker.start()
+            self.worker2.start()
         elif self.state == self.PAUSE:
             self.state = self.PLAYING
             self.event.clear()
             self.worker = threading.Thread(target=self.sendRtp)
+            self.worker2 = threading.Thread(target=self.listenRtcp)
             self.worker.setDaemon(True)
             self.worker.start()
+            self.worker2.start()
         message = self.rtsp.respond(200, seq, self.session)
         return message
 
@@ -158,13 +165,51 @@ class Server:
             self.rtpSocket.close()
         return message
 
+    def sendRtcp(self):
+        try:
+            print("****************send rtcp")
+            port = self.rtcpPort
+            rtcpPacket = SRRtcpPacket()
+            rtcpPacket.exEncode(1,0,112,0,0,int(time()), 0, 0, 0)
+            self.rtcpSocket.sendto(rtcpPacket.getPacket(),
+                                  (self.clientAddress[0],  # accept 返回的address 是二元组
+                                   port))
+            print("****************send rtcp")
+
+            data = self.rtcpSocket.recv(65536)
+            print("rtcp is on****************************")
+            rtcpPacket = RRRtcpPacket()
+            rtcpPacket.decode(data)
+            lost = rtcpPacket.fracLost(0)
+            if lost > 50:
+                print("*******************wtf lost")
+                self.sleepTime = self.sleepTime * 1.1
+                self.MAX_PAYLOAD_SIZE -= 100
+                self.quality -= 5
+        except Exception as e:
+            print(e)
+            pass
+
+    def listenRtcp(self):
+        pass
+        # while True:
+        #     try:
+        #         pass
+        #
+        #     except Exception as e:
+        #         print(e)
+        #         pass
+
+
     def sendRtp(self):
 
         self.rtpLock.acquire()
         counter = 0
         thresold = 10
-
+        self.seqnum = 0
         while True:
+
+
             if self.event.isSet():
                 print("set event")
                 break
@@ -172,7 +217,7 @@ class Server:
             data = self.videoStream.nextFrame()
             if data:
                 marker = 0
-                timestamp = int(time.time())
+                timestamp = int(time())
                 self.videoStream.quality = self.quality
                 frameNum = self.videoStream.getFrameNum()
                 remainSize = len(data)
@@ -193,13 +238,18 @@ class Server:
                         self.rtpSocket.sendto(self.makeRtp(payload, frameNum, length, offset, timestamp, marker),
                                           (self.clientAddress[0],#accept 返回的address 是二元组
                                            port))
-                        time.sleep(self.sleepTime)
+                        sleep(self.sleepTime)
 
                         lenOffset += length
                         offset += 1
+
                     except:
                         print('error happen')
                         traceback.print_exc(file=sys.stdout)
+
+                    if self.seqnum % 20 == 19:
+                        print('**************satisfied')
+                        threading.Thread(target=self.sendRtcp).start()
         self.rtpLock.release()
 
     def makeRtp(self, data, frameNum, length, offset, timestamp, marker):
@@ -233,13 +283,13 @@ def newServer(connSocket, address):
     Server(connSocket, address).run()
 
 def main(port):
-    rtspSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    rtspSocket.bind(('', port))
-    rtspSocket.listen(5)
+    connSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    connSocket.bind(('', port))
+    connSocket.listen(5)
 
     while True:
-        connSocket, address = rtspSocket.accept()
-        t= threading.Thread(target=newServer, args=(connSocket, address))
+        rtspSocket, address = connSocket.accept()
+        t= threading.Thread(target=newServer, args=(rtspSocket, address))
         t.setDaemon(True)
         t.start()
 
