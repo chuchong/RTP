@@ -122,7 +122,7 @@ class Mp4Stream:
         self.fps = self.capture.get(cv2.CAP_PROP_FPS)
         self.frameCnt = self.capture.get(cv2.CAP_PROP_FRAME_COUNT)
         self.totalTime = self.frameCnt / self.fps
-        self.quality = 80
+        self.quality = 50
 
     def setCurFrame(self, frame):
         self.capture.set(cv2.CAP_PROP_POS_FRAMES, frame)

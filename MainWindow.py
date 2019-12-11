@@ -97,6 +97,9 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.timer.timeout.connect(self.refreshSlider)
         self.speedBox.currentIndexChanged.connect(self.changeSpeedBox)
 
+        self.labelWidth = self.label.width()
+        self.labelHeight = self.label.height()
+
         self.sonWidget.slider.sliderPressed.connect(self.pressSlider)
         self.sonWidget.slider.sliderReleased.connect(self.releaseSlider)
         self.sonWidget.play.clicked.connect(self.playMovie)
@@ -316,6 +319,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             #正常情况,连续一帧的分包
             if lastFrameNbr == frameNbr and isComplete:
                 if seqnum != lastSeqnum + 1:
+                    print("********abort frame {}".format(lastFrameNbr))
                     isComplete = False
                     rtpPackets.clear()
                 else:
@@ -371,7 +375,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                     rtpPacket.extendDecode(data)
                     seqnum = rtpPacket.extendedSeq()
                     frameNbr = rtpPacket.lineNo()
-                    print('seqnum {}'.format(seqnum))
+                    # print('seqnum {}'.format(seqnum))
                     if frameNbr >= self.frame_pos:
                         self.packetsQueue .put(rtpPacket)
                     # print('{} {} {} {} {}'.format(seqnum, frameNbr, length, offset, marker))
@@ -459,6 +463,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         if len(imageBytes) > 0:
             image = QImage.fromData(imageBytes)
             pixmap = QPixmap.fromImage(image)
+            if pixmap.width() > self.labelWidth:
+                pixmap = pixmap.scaledToWidth(self.labelWidth)
             self.sonLock.acquire()
             self.playLabel.setPixmap(pixmap)
             self.sonLock.release()
