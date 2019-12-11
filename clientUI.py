@@ -52,6 +52,9 @@ class Ui_MainWindow(object):
         self.loadingLabel.setGeometry(QtCore.QRect(900, 610, 40, 40))
         self.loadingLabel.setText("")
         self.loadingLabel.setObjectName("loadingLabel")
+        self.wait = QtWidgets.QPushButton(self.centralwidget)
+        self.wait.setGeometry(QtCore.QRect(330, 720, 111, 23))
+        self.wait.setObjectName("wait")
         MainWindow.setCentralWidget(self.centralwidget)
         self.menubar = QtWidgets.QMenuBar(MainWindow)
         self.menubar.setGeometry(QtCore.QRect(0, 0, 960, 23))
@@ -78,4 +81,5 @@ class Ui_MainWindow(object):
         self.speedBox.setItemText(4, _translate("MainWindow", "0.5"))
         self.label_2.setText(_translate("MainWindow", "播放速度"))
         self.fullScreen.setText(_translate("MainWindow", "全屏显示"))
+        self.wait.setText(_translate("MainWindow", "等待缓冲加载"))
 

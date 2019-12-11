@@ -112,7 +112,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.sonWidget.loadingLabel.setScaledContents(True)
         self.movie = QMovie("loading.gif")
         self.loadingLabel.setMovie(self.movie)
-
+        self.wait.pressed.connect(self.waitMovie)
         self.sonWidget.loadingLabel.setMovie(self.movie)
 
 
@@ -162,6 +162,19 @@ class MainWindow(QMainWindow, Ui_MainWindow):
     def loadingDone(self):
         self.loadingLabel.hide()
         self.sonWidget.loadingLabel.hide()
+
+    def waitMovie(self):
+        if self.state == self.INIT:
+            QMessageBox.information(self, '欸', '请在play后再点击该按钮,作用是先等视频下载一会儿 ',
+                QMessageBox.Yes, QMessageBox.Yes)
+            return
+
+        if self.waitEvent.isSet():
+            self.waitEvent.clear()
+            self.wait.setText('等待加载视频')
+        else:
+            self.waitEvent.set()
+            self.wait.setText('播放')
 
     @qt_exception_wrapper
     def switchDisplay(self):
@@ -442,6 +455,9 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             try:
                 if self.playEvent.isSet():
                     break
+
+                if self.waitEvent.isSet():
+                    continue
 
                 if self.teardownAcked == 1:
                     break

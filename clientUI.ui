@@ -166,6 +166,19 @@
      <string/>
     </property>
    </widget>
+   <widget class="QPushButton" name="wait">
+    <property name="geometry">
+     <rect>
+      <x>330</x>
+      <y>720</y>
+      <width>111</width>
+      <height>23</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>等待加载视频</string>
+    </property>
+   </widget>
   </widget>
   <widget class="QMenuBar" name="menubar">
    <property name="geometry">
