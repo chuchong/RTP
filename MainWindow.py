@@ -509,6 +509,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                     lastlastseq = self.lastSeqnum
                     self.cumu_lost = cumu_lost
                     sendBackPacket = RRRtcpPacket()
+                    print("current lost {}".format(frac_lost))
                     sendBackPacket.appendReportBlock(self.ssrc, frac_lost, self.cumu_lost,
                                                      self.lastSeqnum, self.jitter, lsr, dlsr)
                     sendBackPacket.encode(1, padding, 311, self.ssrc)

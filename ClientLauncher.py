@@ -25,7 +25,7 @@ except:
 try:
     fileName = sys.argv[4]
 except:
-    fileName = 'Sekiro.mp4'
+    fileName = 'SekiroH.mp4'
     print('folderName default to Sekiro.mp4')
 
 import sys

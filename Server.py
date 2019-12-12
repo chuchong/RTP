@@ -177,15 +177,19 @@ class Server:
             print("****************send rtcp")
 
             data = self.rtcpSocket.recv(65536)
-            print("rtcp is on****************************")
+            print("rtcp is on**************************** {}".format(data))
             rtcpPacket = RRRtcpPacket()
             rtcpPacket.decode(data)
             lost = rtcpPacket.fracLost(0)
+            print("**********lost{}".format(lost))
             if lost > 50:
                 print("*******************wtf lost")
-                self.sleepTime = self.sleepTime * 1.1
-                self.MAX_PAYLOAD_SIZE -= 100
-                self.quality -= 5
+                if self.sleepTime < 0.05:
+                    self.sleepTime = self.sleepTime * 1.1
+                if self.MAX_PAYLOAD_SIZE > 32768:
+                    self.MAX_PAYLOAD_SIZE -= 100
+                if self.quality > 0:
+                    self.quality -= 1
         except Exception as e:
             print(e)
             pass
