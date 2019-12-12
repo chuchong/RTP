@@ -147,14 +147,15 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
     def buffering(self):
         if self.bufferLock.acquire(blocking=False):
+            print("xxxxxxxxxxxxbufferingxxxxxxxxxx")
             self.loading()
             # QThread.msleep(1000)
-
             QTimer.singleShot(1000, self.bufferOut)
 
     def bufferOut(self):
         self.rtpSignals.LoadDoneSignal.emit()
         self.bufferLock.release()
+        print("xxxxxxxxxxxxbuffer outxxxxxxxxxx")
 
     def sonAnime(self):
         self.sonLock.acquire()
@@ -218,6 +219,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.movie.start()
 
     def loadingDone(self):
+        print("XXXXXXXXXXXXXXXXXXXXXXXloading doneXXXXXXXXXXXXXXXXXXXXXXx")
         self.waitEvent.clear()
         self.loadingLabel.hide()
         self.sonWidget.loadingLabel.hide()
@@ -408,6 +410,9 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         accumOffset = 0
 
         while True:
+            if self.playEvent.isSet():
+                print(' refresh into playevent')
+                break
             if self.packetsQueue.empty():
                 continue
             rtpPacket = self.packetsQueue.get()
@@ -460,9 +465,6 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
             lastSeqnum = seqnum
 
-            if self.playEvent.isSet():
-                break
-
         self.packetLock.release()
             # if seqnum > self.frame_pos:  # Discard the late packet
             #     self.bufferQueue.put(rtpPacket)
@@ -475,6 +477,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         while True:
             # print('listen')
 
+            if self.playEvent.isSet():
+                break
             try:
                 (data, address) = self.rtcpSocket.recvfrom(65536)
                 print("receive RTCP")
@@ -519,8 +523,6 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                     self.rtcpSocket.shutdown(socket.SHUT_RDWR)
                     self.rtcpSocket.close()
 
-                if self.playEvent.isSet():
-                    break
         # self.rtcpLock.release()
 
     def listenRtp(self):
@@ -536,7 +538,10 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.lastSeqnum = 0
         self.receivePackets = 0
         while True:
-
+            # print('listen')
+            if self.playEvent.isSet():
+                print(' refresh into playevent')
+                break
             try:
                 data = self.rtpSocket.recv(65536)
                 if data:
@@ -561,8 +566,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                     self.rtpSocket.shutdown(socket.SHUT_RDWR)
                     self.rtpSocket.close()
 
-                if self.playEvent.isSet():
-                    break
+
         self.rtpLock.release()
     @qt_exception_wrapper
     def refreshSlider(self):
@@ -585,13 +589,14 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             stime = time()
             try:
                 if self.playEvent.isSet():
+                    print(' refresh into playevent')
+                    break
+
+                if self.teardownAcked == 1:
                     break
 
                 if self.waitEvent.isSet():
                     continue
-
-                if self.teardownAcked == 1:
-                    break
 
                 if self.bufferQueue.empty():
                     # 这代表了卡
@@ -599,7 +604,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                         # 代表了放完了
                         self.rtpSignals.VideoEndSignal.emit()
                         # self.pauseMovie()
-                    self.rtpSignals.NeedBufferSignal.emit()
+                    else:
+                        self.rtpSignals.NeedBufferSignal.emit()
                     # self.rtpSignals.LoadSignal.emit()
                     # QThread.msleep(1000)
                     # self.rtpSignals.LoadDoneSignal.emit()
@@ -688,6 +694,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             elif self.requestSent == METHOD.PLAY:
                 self.state = self.PLAYING
             elif self.requestSent == METHOD.PAUSE:
+                print('request PAUSE')
                 self.state = self.READY
                 # The play thread exits. A new thread is created on resume.
                 self.playEvent.set()
