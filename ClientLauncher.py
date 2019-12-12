@@ -19,13 +19,13 @@ except:
 try:
     rtpPort = sys.argv[3]
 except:
-    rtpPort = 12451
+    rtpPort = 12457
     print('rtpPort default to 12451')
 
 try:
     fileName = sys.argv[4]
 except:
-    fileName = 'SekiroH.mp4'
+    fileName = 'Sekiro.mp4'
     print('folderName default to Sekiro.mp4')
 
 import sys
