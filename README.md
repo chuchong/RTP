@@ -16,7 +16,7 @@ python ClientLauncher.py
 1. using opencv to capture jpg from a mp4 video
 2. using RTP to send raw jpg data stream from server to client
 3. client controls server by RTSP: SETUP PLAY PAUSE TAERDOWN GET_PARAMETER SET_PARAMETER
-4. RTCP packetization has been implemented, but too volatile to use, in try-rtcp branch
+4. RTCP packetization has been implemented, if frac_lost > 50/255, then the server will decrease video quality and prolong sleep time between two packets
 5. you can show video in full-screen mode, can buffer-load video, can set video quality, can reposition, can change speed of video in client
 # implementation
 1. GET_PARAMETER SET_PARAMETER in RTSP to ge/set fps/total frame etc
