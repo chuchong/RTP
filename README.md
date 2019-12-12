@@ -5,7 +5,7 @@ but rather more complicated.
 # environment
 ```
 language: python3
-packets: opencv + pyqt5
+packages: opencv + pyqt5
 ```
 # run
 ```
